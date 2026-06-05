@@ -1,0 +1,193 @@
+import { LoaderCircle, PlusCircle } from 'lucide-react'
+import { useContext, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+
+import { AuthContext } from '../AuthProvider'
+import axiosInstance from '../axiosInstance'
+
+// Initial state object for new task form
+const initialTask = {
+    title: '',
+    description: '',
+    status: 'pending',
+    deadline: ''
+}
+
+const CreateTask = () => {
+    const navigate = useNavigate()
+    const { setIsAuthenticated } = useContext(AuthContext)
+    const [task, setTask] = useState(initialTask)
+    const [isLoading, setIsLoading] = useState(false)
+    const [message, setMessage] = useState('')
+    const [error, setError] = useState('')
+
+    const handleLogout = () => {
+        localStorage.removeItem('accessToken')
+        setIsAuthenticated(false)
+        navigate('/')
+    }
+
+    const handleChange = (e) => {
+        setTask({
+            ...task,
+            [e.target.id]: e.target.value
+        })
+    }
+
+    const handleSubmit = async (e) => {
+        e.preventDefault()
+        setMessage('')
+        setError('')
+        
+        // check the required fields before sending request
+        if (!task.title.trim() || !task.deadline) {
+            setError('Title and deadline are required.')
+            return
+        }
+
+        try { 
+            setIsLoading(true)
+
+            // Send POST request to create task
+            await axiosInstance.post('/tasks/create', task)
+            setTask(initialTask)
+            setMessage('Task created successfully!')
+
+        } catch (err) {
+            // Show backend error message if available
+            setError(err.response?.data?.message || 'Task creation failed.')
+        } finally {
+            setIsLoading(false)
+        }
+    }
+
+    return (
+        <main className="min-h-screen bg-stone-50 px-4 py-8 text-stone-900">
+
+            {/* Main container */}
+            <section className="mx-auto max-w-3xl">
+
+                {/* Heading Section */}
+                <div className="mb-8">
+                    <div className="flex items-center justify-between gap-4">
+                        <div>
+                            <p className="text-sm font-semibold uppercase tracking-[0.25em] text-emerald-700">
+                                Planner
+                            </p>
+                            <h1 className="mt-2 font-serif text-4xl font-semibold">
+                                Create a new task
+                            </h1>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={handleLogout}
+                            className="rounded-2xl border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-700 transition hover:border-stone-400 hover:bg-stone-100"
+                        >
+                            Logout
+                        </button>
+                    </div>
+                    <p className="mt-3 text-stone-600">
+                        plan your day, stay organized, and boost your productivity with our task planner. Create, manage, and track your tasks all in one place.
+                    </p>
+                </div>
+
+                {/* Task Form */}
+                <form
+                    onSubmit={handleSubmit}
+                    className="rounded-3xl border border-stone-200 bg-white p-6 shadow-sm md:p-8"
+                >
+                    <div className="grid gap-5 md:grid-cols-2">
+                        <div className="md:col-span-2">
+                            <label className="mb-2 block text-sm font-semibold text-stone-700" htmlFor="title">
+                                Task title
+                            </label>
+                            <input
+                                id="title"
+                                type="text"
+                                value={task.title}
+                                onChange={handleChange}
+                                placeholder="e.g. Finish project UI"
+                                className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 outline-none transition focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-100"
+                            />
+                        </div>
+
+                        <div className="md:col-span-2">
+                            <label className="mb-2 block text-sm font-semibold text-stone-700" htmlFor="description">
+                                Description
+                            </label>
+                            <textarea
+                                id="description"
+                                value={task.description}
+                                onChange={handleChange}
+                                placeholder="Short details about this task..."
+                                rows="4"
+                                className="w-full resize-none rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 outline-none transition focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-100"
+                            />
+                        </div>
+
+                        <div>
+                            <label className="mb-2 block text-sm font-semibold text-stone-700" htmlFor="status">
+                                Status
+                            </label>
+                            <select
+                                id="status"
+                                value={task.status}
+                                onChange={handleChange}
+                                className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 outline-none transition focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-100"
+                            >
+                                <option value="pending">Pending</option>
+                                <option value="in-progress">In progress</option>
+                                <option value="completed">Completed</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label className="mb-2 block text-sm font-semibold text-stone-700" htmlFor="deadline">
+                                Deadline
+                            </label>
+                            <input
+                                id="deadline"
+                                type="date"
+                                value={task.deadline}
+                                onChange={handleChange}
+                                className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 outline-none transition focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-100"
+                            />
+                        </div>
+                    </div>
+
+                    {error && (
+                        <p className="mt-5 rounded-2xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+                            {error}
+                        </p>
+                    )}
+
+                    {message && (
+                        <p className="mt-5 rounded-2xl bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">
+                            {message}
+                        </p>
+                    )}
+
+                    <button
+                        type="submit"
+                        disabled={isLoading}
+                        className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-stone-900 px-5 py-3 font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-70"
+                    >
+                        {isLoading ? (
+                            <>
+                                <LoaderCircle className="h-5 w-5 animate-spin" />
+                                Creating...
+                            </>
+                        ) : (
+                            <>
+                                <PlusCircle className="h-5 w-5" />
+                                Create task
+                            </>
+                        )}
+                    </button>
+                </form>
+            </section>
+        </main>
+    )
+}
+
+export default CreateTask
