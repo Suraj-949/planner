@@ -58,4 +58,22 @@ async function createTask(req, res) {
 
 }
 
-module.exports = { createTask };
+async function getTasks(req, res) {
+    try {
+        const userId = req.user;
+
+        const tasks = await Task.find({ userId }).sort({ dateCreated: -1 });
+
+        res.status(200).json({
+            message: 'Tasks fetched successfully',
+            tasks
+        });
+    } catch (err) {
+        res.status(500).json({
+            message: 'Error fetching tasks',
+            error: err.message
+        });
+    }
+}
+
+module.exports = { createTask, getTasks };

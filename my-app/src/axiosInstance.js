@@ -4,7 +4,7 @@ const baseURL = import.meta.env.VITE_BASE_BACKEND_URL || 'http://localhost:3000/
 
 const axiosInstance = axios.create({
     baseURL: baseURL,
-    // Include cookies so the refresh-token flow can work across frontend/backend ports.
+    // Include credentials (cookies) in requests to support refresh token flow
     withCredentials: true,
     headers: {
         'Content-Type': 'application/json'
@@ -28,6 +28,38 @@ axiosInstance.interceptors.request.use(
     function(error) {
         console.log('Error config : ', error.config)
         return Promise.reject(error);   
+    }
+)
+
+
+
+// Add a response interceptor to handle 401 errors and attempt token refresh
+axiosInstance.interceptors.response.use(
+    function onFulfilled(response) {
+        return response;
+    },
+
+    async function onRejected(error) {
+        const originalRequest = error.config;
+
+        // Check if the error is a 401 and we haven't already tried to refresh
+        if (error.response?.status === 401 && !originalRequest.retry) {
+            // Mark the request as having been retried
+            originalRequest.retry = true; 
+            try {
+                const response = await axiosInstance.post('/auth/refresh-token');
+                console.log('Token refresh response:', response.data);
+                localStorage.setItem('accessToken', response.data.accessToken);
+                
+                // Update the original request's Authorization header and retry it
+                originalRequest.headers['Authorization'] = `Bearer ${response.data.accessToken}`;
+                return axiosInstance(originalRequest);
+            } catch (err) {
+                console.error('Token refresh failed:', err);
+            }
+        }
+
+        return Promise.reject(error);
     }
 )
 

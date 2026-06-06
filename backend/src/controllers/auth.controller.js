@@ -169,7 +169,7 @@ async function refreshToken(req, res) {
         });
     } catch (err) {
         console.error('Refresh token error:', err.message);
-        res.status(500).json({
+        res.status(401).json({
             message: 'Failed to refresh token',
             error: err.message
         });
