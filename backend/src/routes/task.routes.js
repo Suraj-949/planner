@@ -10,4 +10,6 @@ router.get('/fetch', authMiddleWare.authMiddleware, taskController.getTasks);
 
 router.put('/update/:id', authMiddleWare.authMiddleware, taskController.updateTask);
 
+router.delete('/delete/:id', authMiddleWare.authMiddleware, taskController.deleteTask);
+
 module.exports = router;

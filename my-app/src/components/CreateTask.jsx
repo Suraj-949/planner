@@ -6,6 +6,7 @@ import { AuthContext } from '../AuthProvider'
 import axiosInstance from '../axiosInstance'
 
 import FetchTask from './FetchTask'
+import { useEffect } from 'react'
 
 // Initial state object for new task form
 const initialTask = {
@@ -23,6 +24,16 @@ const CreateTask = () => {
     const [message, setMessage] = useState('')
     const [error, setError] = useState('')
     const [refreshTrigger, setRefreshTrigger] = useState(0)
+
+    useEffect(() => {
+        if (!message) return
+
+        const timer = setTimeout(() => {
+            setMessage('')
+        }, 3000)
+
+        return () => clearTimeout(timer)
+    }, [message])
 
     const handleLogout = () => {
         localStorage.removeItem('accessToken')
@@ -91,7 +102,7 @@ const CreateTask = () => {
                     </p>
                 </div>
 
-                <div className="grid gap-8 lg:grid-cols-2 lg:items-start">
+                <div className=" grid gap-8 lg:grid-cols-2 lg:items-start min-h-[400px]">
                     <form
                         onSubmit={handleSubmit}
                         className="rounded-3xl border border-stone-200 bg-white p-6 shadow-sm md:p-8"

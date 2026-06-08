@@ -4,11 +4,14 @@ const Task = require('../models/task.model');
 function validateStatus(status) {
     const validStatuses = ['pending', 'in-progress', 'completed'];
     
+    // If status is provided, check if it's one of the valid options. If not, return an error message. If status is not provided, we can allow it to be optional and default to 'pending' in the model.
     if (status && !validStatuses.includes(status)) {
         return 'Invalid status value'
     }
 }
 
+
+// This function validates the deadline input and ensures it's a valid date. It returns an error message if the format is invalid, or the parsed date if it's valid.
 function validateDeadline(deadline) {
     const parsedDeadline = new Date(deadline);
 
@@ -157,4 +160,29 @@ async function updateTask(req, res) {
     }
 }
 
-module.exports = { createTask, getTasks, updateTask };
+async function deleteTask(req, res) {
+    try {
+        const userID = req.user;
+        const taskId = req.params.id;
+
+        const task = await Task.findOneAndDelete({ _id: taskId, userId: userID });
+
+        if (!task) {
+            return res.status(404).json({
+                message: 'Task not found'
+            });
+        }
+
+        res.status(200).json({
+            message: 'Task deleted successfully',
+            task : task
+        });
+    } catch (err) {
+        res.status(400).json({
+            message: 'Error deleting task',
+            error: err.message
+        });
+    }
+}
+
+module.exports = { createTask, getTasks, updateTask, deleteTask };

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import axiosInstance from '../axiosInstance'
-import { Ellipsis, PencilLine } from 'lucide-react'
+import { Ellipsis, PencilLine, X } from 'lucide-react'
 
 import UpdateTaskModal from './UpdateTaskModal'
 
@@ -8,8 +8,9 @@ const FetchTask = ({ refreshTrigger = 0 }) => {
     const [tasks, setTasks] = useState([])
     const [isLoading, setIsLoading] = useState(false)
     const [error, setError] = useState('')
-    const [activeMenuId, setActiveMenuId] = useState('')
-    const [editingTask, setEditingTask] = useState(null)
+    
+    const [dropDownId, setDropDownId] = useState('')
+    const [editingTask, setEditingTask] = useState(null) 
     const [updateMessage, setUpdateMessage] = useState('')
 
     const fetchTasks = async () => {
@@ -29,29 +30,55 @@ const FetchTask = ({ refreshTrigger = 0 }) => {
         fetchTasks()
     }, [refreshTrigger])
 
-    const openMenu = (taskId) => {
-        setActiveMenuId((currentValue) => (currentValue === taskId ? '' : taskId))
+    useEffect(() => {
+        if (!updateMessage) return
+
+        const timer = setTimeout(() => {
+            setUpdateMessage('')
+        }, 3000)
+
+        return () => clearTimeout(timer)
+    }, [updateMessage])
+
+    // Opens/closes the dropdown for a specific task. If the clicked task is already open, close it by setting an empty string. Otherwise, set the clicked taskId as the active dropdown.
+    const openDropDown = (taskId) => {
+        setDropDownId((currentValue) => (currentValue === taskId ? '' : taskId))
     }
 
-    const openUpdateModal = (task) => {
-        setActiveMenuId('')
-        setEditingTask(task)
+    // open the modal by selectiing task 
+    const openUpdateModal = (task) => { 
+        setDropDownId('')
+        setEditingTask(task) 
     }
 
     const handleUpdated = async (message) => {
         setUpdateMessage(message)
         await fetchTasks()
+    } 
+
+    const handleDelete = async (task) => {
+        setError('')
+        setUpdateMessage('')
+        setDropDownId('')
+
+        try {
+            await axiosInstance.delete(`/tasks/delete/${task._id}`)
+            setUpdateMessage('Task deleted successfully.')
+            await fetchTasks()
+        } catch (err) {
+            setError(err.response?.data?.message || 'Failed to delete task.')
+        }
     }
 
     return (
         <section
             className="rounded-3xl border border-stone-200 bg-white p-6 shadow-sm md:p-8"
-            onClick={() => setActiveMenuId('')}
+            onClick={() => setDropDownId('')} // This onClick handler on the section ensures that clicking anywhere outside the dropdown menu will close it by resetting dropDownId to an empty string.
         >
             <div className="mb-5 flex items-center justify-between gap-3">
                 <div>
                     <h2 className="text-2xl font-semibold text-stone-900">Your tasks</h2>
-                    <p className="mt-1 text-sm text-stone-600">Here’s the latest list from the server.</p>
+                    <p className="mt-1 text-sm text-stone-600">Here’s your task list.</p>
                 </div>
                 <button
                     onClick={fetchTasks}
@@ -82,11 +109,11 @@ const FetchTask = ({ refreshTrigger = 0 }) => {
                 </p>
             )}
 
-            <div className="mt-4 grid gap-4">
+            <div className="mt-4 grid gap-4 max-h-120 overflow-y-auto">
                 {tasks.map((task) => (
                     <article
                         key={task._id}
-                        className="relative rounded-2xl border border-stone-200 bg-stone-50 p-4 transition hover:border-stone-300 hover:bg-stone-100/70"
+                        className="relative rounded-2xl border border-emerald-200 bg-stone-50 p-4 transition hover:border-stone-300 hover:bg-stone-100/70"
                     >
                         <div className="flex flex-wrap items-start justify-between gap-3">
                             <div>
@@ -108,6 +135,7 @@ const FetchTask = ({ refreshTrigger = 0 }) => {
                                         Deadline
                                     </p>
                                     <p className="mt-1 font-medium text-stone-700">
+                                        {/* this checks if deadline exists before formatting, otherwise shows 'N/A' to avoid errors */}
                                         {task.deadline ? new Date(task.deadline).toLocaleDateString() : 'N/A'}
                                     </p>
                                 </div>
@@ -117,9 +145,10 @@ const FetchTask = ({ refreshTrigger = 0 }) => {
                                         Created
                                     </p>
                                     <p className="mt-1 font-medium text-stone-700">
+                                        {/* this checks if dateCreated exists before formatting, otherwise shows 'N/A' to avoid errors */}
                                         {task.dateCreated ? new Date(task.dateCreated).toLocaleString() : 'N/A'}
                                     </p>
-                                </div>
+                                </div> 
                             </div>
 
                             <div className="relative">
@@ -127,18 +156,20 @@ const FetchTask = ({ refreshTrigger = 0 }) => {
                                     type="button"
                                     aria-label={`More options for ${task.title}`}
                                     onClick={(event) => {
-                                        event.stopPropagation()
-                                        openMenu(task._id)
+                                        event.stopPropagation() // yaha pe isliye stopPropagation use kiya hai taki jab user dropdown toggle kare, toh woh click event parent element pe propagate na ho jaye aur dropdown khulte hi close na ho jaye.
+                                        openDropDown(task._id)
                                     }}
                                     className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-stone-200 bg-white text-stone-500 transition hover:border-stone-300 hover:bg-stone-100 hover:text-stone-700"
                                 >
                                     <Ellipsis size={16} className="rotate-90" />
                                 </button>
+                                
 
-                                {activeMenuId === task._id && (
+                                {/* Conditionally render the Dropdown menu jab dropDownId current taskId ke equal ho */}
+                                {dropDownId === task._id && (
                                     <div
                                         className="absolute right-0 top-10 z-10 w-40 overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-lg"
-                                        onClick={(event) => event.stopPropagation()}
+                                        onClick={(event) => event.stopPropagation()} //
                                     >
                                         <button
                                             type="button"
@@ -148,6 +179,14 @@ const FetchTask = ({ refreshTrigger = 0 }) => {
                                             <PencilLine size={16} />
                                             Update
                                         </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleDelete(task)}
+                                            className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm font-medium text-stone-700 transition hover:bg-stone-100"
+                                        >
+                                            <X size={16} />
+                                            Delete
+                                        </button>
                                     </div>
                                 )}
                             </div>
@@ -156,6 +195,7 @@ const FetchTask = ({ refreshTrigger = 0 }) => {
                 ))}
             </div>
 
+            {/* conditionally render the UpdateTaskModal when a task is being edited, passing the selected task and handlers as props */}
             {editingTask && (
                 <UpdateTaskModal
                     task={editingTask}
