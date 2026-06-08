@@ -14,6 +14,7 @@ function authMiddleware(req, res, next) {
         const token = authHeader.split(' ')[1];
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
+        // Attach the user ID from the token to the request object for use in controllers
         req.user = decoded.id;
         console.log("Decoded user ID from token:", req.user);
 
@@ -22,7 +23,7 @@ function authMiddleware(req, res, next) {
         console.error('Authentication error:', err);
         res.status(401).json({
             message: 'Invalid or expired token'
-        });
+        }); 
     }
     
 }

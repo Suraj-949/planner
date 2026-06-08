@@ -1,7 +1,28 @@
 const Task = require('../models/task.model');
 
-async function createTask(req, res) {
 
+function validateStatus(status) {
+    const validStatuses = ['pending', 'in-progress', 'completed'];
+    
+    if (status && !validStatuses.includes(status)) {
+        return 'Invalid status value'
+    }
+}
+
+function validateDeadline(deadline) {
+    const parsedDeadline = new Date(deadline);
+
+    if (isNaN(parsedDeadline.getTime())) {
+        return {
+            error: 'Invalid deadline format. Please provide a valid date.'
+        }
+    }
+
+    return { value: parsedDeadline };
+}
+
+
+async function createTask(req, res) {
     try {
         
         const { title, description, status, deadline } = req.body;
@@ -17,28 +38,23 @@ async function createTask(req, res) {
             });
         }
 
-        // Validate deadline format
-        const parsedDeadline = new Date(deadline);
-        if (isNaN(parsedDeadline.getTime())) {
+        // validate status
+        const statusError = validateStatus(status);
+        if (statusError) {
             return res.status(400).json({
-                message: 'Invalid deadline format. Please provide a valid date.'
+                message: statusError
             });
         }
 
-        // Valid status values
-        const validStatuses = ['pending', 'in-progress', 'completed'];
-
-        const taskData = { title, description, deadline: parsedDeadline, userId };
-
-        // validate status
-        if (status !== undefined && status !== null && status !== '') {
-            if (!validStatuses.includes(status)) {
-                return res.status(400) .json({
-                    message : "Invalid status."
-                })
-            }
-            taskData.status = status;
+        // Validate deadline format
+        const deadlineResult = validateDeadline(deadline);
+        if (deadlineResult.error) {
+            return res.status(400).json({
+                message: deadlineResult.error
+            });
         }
+
+        const taskData = { title, description, status, deadline: deadlineResult.value, userId };
 
         // Create a new task instance and save it to the database
         const task = new Task( taskData );
@@ -58,10 +74,15 @@ async function createTask(req, res) {
 
 }
 
+
+
+
+
 async function getTasks(req, res) {
     try {
         const userId = req.user;
-
+        
+        // Fetch tasks from the database that belong to the authenticated user, sorted by creation date (newest first)
         const tasks = await Task.find({ userId }).sort({ dateCreated: -1 });
 
         res.status(200).json({
@@ -69,11 +90,71 @@ async function getTasks(req, res) {
             tasks
         });
     } catch (err) {
-        res.status(500).json({
+        res.status(400).json({
             message: 'Error fetching tasks',
             error: err.message
         });
     }
 }
 
-module.exports = { createTask, getTasks };
+
+
+
+
+async function updateTask(req, res) {
+    
+    try {
+        const userID = req.user;
+        const taskId = req.params.id;
+        const { title, description, status, deadline } = req.body;
+
+        if (!title || !deadline ) {
+            return res.status(400).json({
+                message: 'Title and deadline are required'
+            });
+        }
+
+        const statusError = validateStatus(status);
+        if (statusError) {
+            return res.status(400).json({
+                message: statusError
+            });
+        }
+
+        const deadlineResult = validateDeadline(deadline);
+        if (deadlineResult.error) {
+            return res.status(400).json({
+                message: deadlineResult.error
+            });
+        }
+
+        const task = await Task.findOneAndUpdate(
+            { _id: taskId, userId: userID },
+            {
+                title,
+                description,
+                status,
+                deadline: deadlineResult.value
+            },
+            { returnDocument: 'after' }
+        );
+
+        if (!task) {
+            return res.status(404).json({
+                message: 'Task not found'
+            });
+        }
+
+        res.status(200).json({
+            message: 'Task updated successfully',
+            task
+        });
+    } catch (err) {
+        res.status(400).json({
+            message: 'Error updating task',
+            error: err.message
+        });
+    }
+}
+
+module.exports = { createTask, getTasks, updateTask };

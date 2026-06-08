@@ -47,6 +47,7 @@ axiosInstance.interceptors.response.use(
             // Mark the request as having been retried
             originalRequest.retry = true; 
             try {
+                // no need to send the refresh token in the body since it's stored in an HTTP-only cookie
                 const response = await axiosInstance.post('/auth/refresh-token');
                 console.log('Token refresh response:', response.data);
                 localStorage.setItem('accessToken', response.data.accessToken);
