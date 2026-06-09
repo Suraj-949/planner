@@ -27,6 +27,14 @@ const CreateTask = () => {
     const [error, setError] = useState('')
     const [refreshTrigger, setRefreshTrigger] = useState(0)
 
+    const [taskStats, setTaskStats] = useState({
+        totalTasks: 0,
+        completedTasks: 0,
+        inProgressTasks: 0,
+        pendingTasks: 0,
+        progress: 0,
+    })
+
     useEffect(() => {
         if (!message) return
 
@@ -103,6 +111,41 @@ const CreateTask = () => {
                         plan your day, stay organized, and boost your productivity with our task planner. Create, manage, and track your tasks all in one place.
                     </p>
                 </div>
+
+                <section className="mb-6 rounded-3xl border border-emerald-100 bg-white p-6 shadow-sm">
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                        <div>
+                            <p className="text-sm font-semibold uppercase tracking-[0.2em] text-emerald-700">Progress tracker</p>
+                            <h2 className="mt-2 text-2xl font-semibold text-stone-900">Your completion overview</h2>
+                            <p className="mt-1 text-sm text-stone-600">Track how many tasks are done, in progress, and still waiting.</p>
+                        </div>
+                        <div className="rounded-2xl bg-emerald-50 px-4 py-3 text-right">
+                            <p className="text-xs uppercase tracking-[0.25em] text-emerald-700">Completion rate</p>
+                            <p className="text-3xl font-semibold text-emerald-900">{Math.round(taskStats.progress)}%</p>
+                        </div>
+                    </div>
+
+                    <div className="mt-5 h-3 rounded-full bg-stone-200">
+                        <div
+                            className="h-3 rounded-full bg-gradient-to-r from-emerald-500 to-lime-400 transition-all duration-300"
+                            style={{ width: `${taskStats.progress}%` }}
+                        /> 
+                    </div>
+
+                    <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                        {[
+                            { label: 'Total tasks', value: taskStats.totalTasks },
+                            { label: 'Completed', value: taskStats.completedTasks },
+                            { label: 'In progress', value: taskStats.inProgressTasks },
+                            { label: 'Pending', value: taskStats.pendingTasks }
+                        ].map((item) => (
+                            <article key={item.label} className="rounded-2xl border border-stone-200 bg-stone-50 p-4 shadow-sm">
+                                <p className="text-sm text-stone-500">{item.label}</p>
+                                <p className="mt-2 text-3xl font-semibold text-stone-900">{item.value}</p>
+                            </article>
+                        ))}
+                    </div>
+                </section>
 
                 <div className="grid gap-8 lg:grid-cols-2 lg:items-start">
                     <form
@@ -235,7 +278,7 @@ const CreateTask = () => {
                     </form>
 
                     <div className="lg:sticky lg:top-8">
-                        <FetchTask refreshTrigger={refreshTrigger} />
+                        <FetchTask refreshTrigger={refreshTrigger} onStatsChange={setTaskStats} />
                     </div>
                 </div>
             </section>

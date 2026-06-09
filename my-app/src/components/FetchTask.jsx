@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import axiosInstance from '../axiosInstance'
 import { Ellipsis, PencilLine, X } from 'lucide-react'
 
 import UpdateTaskModal from './UpdateTaskModal'
 
-const FetchTask = ({ refreshTrigger = 0 }) => {
+const FetchTask = ({ refreshTrigger = 0, onStatsChange }) => {
     const [tasks, setTasks] = useState([])
     const [isLoading, setIsLoading] = useState(false)
     const [error, setError] = useState('')
@@ -70,6 +70,26 @@ const FetchTask = ({ refreshTrigger = 0 }) => {
             setError(err.response?.data?.message || 'Failed to delete task.')
         }
     }
+
+    const calculateStats = (taskList) => {
+        const totalTasks = taskList.length
+        const completedTasks = taskList.filter((task) => task.status === 'completed').length
+        const inProgressTasks = taskList.filter((task) => task.status === 'in-progress').length
+        const pendingTasks = taskList.filter((task) => task.status === 'pending').length
+        const progress = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0
+
+        return { totalTasks, completedTasks, inProgressTasks, pendingTasks, progress }
+    }
+
+    // Memorize stats so recalculation happens only when tasks change
+    const stats = useMemo(() => calculateStats(tasks), [tasks])
+
+    // Send updated stats to parent component whenever called, using the callback function received via props
+    useEffect(() => {
+
+        // Call parent function and pass latest stats
+        onStatsChange?.(stats)
+    }, [onStatsChange, stats])
 
     const reminder = (task) => {
         const today = new Date().setHours(0, 0, 0, 0)
