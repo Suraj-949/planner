@@ -13,6 +13,7 @@ const FetchTask = ({ refreshTrigger = 0 }) => {
     const [editingTask, setEditingTask] = useState(null) 
     const [updateMessage, setUpdateMessage] = useState('')
 
+
     const fetchTasks = async () => {
         try {
             setIsLoading(true)
@@ -70,6 +71,14 @@ const FetchTask = ({ refreshTrigger = 0 }) => {
         }
     }
 
+    const reminder = (task) => {
+        const today = new Date().setHours(0, 0, 0, 0)
+        const deadline = new Date(task.deadline).setHours(0, 0, 0, 0)
+        const timeDifference = (deadline - today) / (1000 * 60 * 60 * 24); // Convert milliseconds difference into days
+
+        return timeDifference;
+    }
+
     return (
         <section
             className="rounded-3xl border border-stone-200 bg-white p-6 shadow-sm md:p-8"
@@ -122,11 +131,39 @@ const FetchTask = ({ refreshTrigger = 0 }) => {
                                     <p className="mt-1 text-sm text-stone-600">{task.description}</p>
                                 )}
                             </div>
+                            
+                            <div className="flex flex-row items-center gap-3">
+                                
+                                {/* Deadline reminder logic */}
+                                {task.deadline &&
+                                task.status !== "completed" &&
+                                reminder(task) < 0 && (
+                                    <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-bold text-red-800">
+                                        Overdue
+                                    </span>
+                                )}
 
-                            <span
-                                className={`rounded-full px-3 py-1 text-xs font-bold ${task.priority === 'high' ? "bg-red-100 text-red-800" : task.priority === "medium" ? "bg-yellow-100 text-yellow-800" : "bg-green-100 text-green-800"} `}>
-                                    {task.priority}
-                            </span>
+                                {task.deadline &&
+                                task.status !== "completed" &&
+                                reminder(task) === 0 && (
+                                    <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-bold text-blue-800">
+                                        Due Today
+                                    </span>
+                                )}
+
+                                {task.deadline &&
+                                task.status !== "completed" &&
+                                reminder(task) === 1 && (
+                                    <span className="rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-bold text-yellow-800">
+                                        Due Tomorrow
+                                    </span>
+                                )}
+
+                                <span
+                                    className={`rounded-full px-3 py-1 text-xs font-bold ${task.priority === 'high' ? "bg-red-100 text-red-800" : task.priority === "medium" ? "bg-yellow-100 text-yellow-800" : "bg-green-100 text-green-800"} `}>
+                                        {task.priority}
+                                </span>
+                            </div>
                                 
                         </div>
 
