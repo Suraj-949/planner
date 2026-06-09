@@ -13,7 +13,9 @@ const initialTask = {
     title: '',
     description: '',
     status: 'pending',
-    deadline: ''
+    deadline: '',
+    category: 'other',
+    priority: 'medium'
 }
 
 const CreateTask = () => {
@@ -102,10 +104,10 @@ const CreateTask = () => {
                     </p>
                 </div>
 
-                <div className=" grid gap-8 lg:grid-cols-2 lg:items-start min-h-[400px]">
+                <div className="grid gap-8 lg:grid-cols-2 lg:items-start">
                     <form
                         onSubmit={handleSubmit}
-                        className="rounded-3xl border border-stone-200 bg-white p-6 shadow-sm md:p-8"
+                        className="rounded-3xl h-full border border-stone-200 bg-white p-6 shadow-sm md:p-8"
                     >
                         <div className="grid gap-5 md:grid-cols-2">
                             <div className="md:col-span-2">
@@ -113,7 +115,7 @@ const CreateTask = () => {
                                     Task title
                                 </label>
                                 <input
-                                    id="title"
+                                    id="title" 
                                     type="text"
                                     value={task.title}
                                     onChange={handleChange}
@@ -163,6 +165,41 @@ const CreateTask = () => {
                                     onChange={handleChange}
                                     className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 outline-none transition focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-100"
                                 />
+                            </div>
+
+                            <div>
+                                <label className="mb-2 block text-sm font-semibold text-stone-700" htmlFor="category">
+                                    Category
+                                </label>
+                                <select
+                                    id="category"
+                                    value={task.category}
+                                    onChange={handleChange}
+                                    className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 outline-none transition focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-100"
+                                >
+                                    <option value="DSA">DSA</option>
+                                    <option value="development">Development</option>
+                                    <option value="college">College</option>
+                                    <option value="personal">Personal</option>
+                                    <option value="work">Work</option>
+                                    <option value="other">Other</option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="mb-2 block text-sm font-semibold text-stone-700" htmlFor="priority">
+                                    Priority
+                                </label>
+                                <select
+                                    id="priority"
+                                    value={task.priority}
+                                    onChange={handleChange}
+                                    className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 outline-none transition focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-100"
+                                >
+                                    <option value="high">High</option>
+                                    <option value="medium">Medium</option>
+                                    <option value="low">Low</option>
+                                </select>
                             </div>
                         </div>
 

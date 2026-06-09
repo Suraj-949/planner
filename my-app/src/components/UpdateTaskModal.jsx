@@ -15,7 +15,9 @@ const UpdateTaskModal = ({ task, onClose, onUpdated }) => {
         title: '',
         description: '',
         status: 'pending',
-        deadline: ''
+        deadline: '',
+        category: 'other',
+        priority: 'medium'
     })
     const [isSaving, setIsSaving] = useState(false)
     const [error, setError] = useState('')
@@ -27,7 +29,9 @@ const UpdateTaskModal = ({ task, onClose, onUpdated }) => {
             title: task.title || '',
             description: task.description || '',
             status: task.status || 'pending',
-            deadline: formatDateForInput(task.deadline)
+            deadline: formatDateForInput(task.deadline),
+            category: task.category || 'other',
+            priority: task.priority || 'medium'
         })
         setError('')
     }, [task])
@@ -57,7 +61,9 @@ const UpdateTaskModal = ({ task, onClose, onUpdated }) => {
                 title: formData.title,
                 description: formData.description,
                 status: formData.status,
-                deadline: formData.deadline
+                deadline: formData.deadline,
+                category: formData.category,
+                priority: formData.priority
             })
 
             await onUpdated('Task updated successfully.')
@@ -70,7 +76,7 @@ const UpdateTaskModal = ({ task, onClose, onUpdated }) => {
     }
 
     return (
-        <div
+        <div  
             className="fixed inset-0 z-20 flex items-center justify-center bg-stone-950/50 px-4"
             onClick={onClose}
         >
@@ -152,6 +158,41 @@ const UpdateTaskModal = ({ task, onClose, onUpdated }) => {
                         />
                     </div>
 
+                    <div>
+                        <label className="mb-2 block text-sm font-semibold text-stone-700" htmlFor="category">
+                            Category
+                        </label>
+                        <select
+                            id="category"
+                            value={formData.category}
+                            onChange={handleChange}
+                            className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 outline-none transition focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-100"
+                        >
+                            <option value="DSA">DSA</option>
+                            <option value="development">Development</option>
+                            <option value="college">College</option>
+                            <option value="personal">Personal</option>
+                            <option value="work">Work</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label className="mb-2 block text-sm font-semibold text-stone-700" htmlFor="priority">
+                            Priority
+                        </label>
+                        <select
+                            id="priority"
+                            value={formData.priority}
+                            onChange={handleChange}
+                            className="w-full rounded-2xl border border-stone-300 bg-stone-50 px-4 py-3 outline-none transition focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-100"
+                        >
+                            <option value="high">High</option>
+                            <option value="medium">Medium</option>
+                            <option value="low">Low</option>
+                        </select>
+                    </div>
+
                     {error && (
                         <p className="md:col-span-2 rounded-2xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
                             {error}
@@ -161,7 +202,7 @@ const UpdateTaskModal = ({ task, onClose, onUpdated }) => {
                     <div className="md:col-span-2 flex flex-col gap-3 sm:flex-row sm:justify-end">
                         <button
                             type="button"
-                            onClick={onClose}
+                            onClick={onClose} 
                             className="inline-flex items-center justify-center gap-2 rounded-2xl border border-stone-300 px-5 py-3 font-semibold text-stone-700 transition hover:bg-stone-100"
                         >
                             Cancel

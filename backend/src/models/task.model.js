@@ -26,6 +26,16 @@ const taskSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
         required: true
+    },
+    category: {
+        type : String,
+        enum: ['DSA', 'development', 'college', 'personal', 'work', 'other'],
+        default: 'other'
+    },
+    priority: {
+        type: String,
+        enum: ["high", "medium", "low"],
+        default: "medium",
     }
 });
 

@@ -10,6 +10,22 @@ function validateStatus(status) {
     }
 }
 
+function validateCategory(category) {
+    const validCategories = ['DSA', 'development', 'college', 'personal', 'work', 'other'];
+    
+    if (category && !validCategories.includes(category)) {
+        return 'Invalid category value'
+    }
+}
+
+function validatePriority(priority) {
+    const validPriorities = ['high', 'medium', 'low'];
+
+    if (priority && !validPriorities.includes(priority)) {
+        return 'Invalid priority value'
+    }
+}
+
 
 // This function validates the deadline input and ensures it's a valid date. It returns an error message if the format is invalid, or the parsed date if it's valid.
 function validateDeadline(deadline) {
@@ -28,7 +44,7 @@ function validateDeadline(deadline) {
 async function createTask(req, res) {
     try {
         
-        const { title, description, status, deadline } = req.body;
+        const { title, description, status, deadline, category, priority } = req.body;
         // Get the user ID from the authenticated request
         const userId = req.user; 
 
@@ -49,6 +65,20 @@ async function createTask(req, res) {
             });
         }
 
+        const categoryError = validateCategory(category);
+        if (categoryError) {
+            return res.status(400).json({
+                message: categoryError
+            });
+        }
+
+        const priorityError = validatePriority(priority);
+        if (priorityError) {
+            return res.status(400).json({
+                message: priorityError
+            });
+        }
+
         // Validate deadline format
         const deadlineResult = validateDeadline(deadline);
         if (deadlineResult.error) {
@@ -57,7 +87,7 @@ async function createTask(req, res) {
             });
         }
 
-        const taskData = { title, description, status, deadline: deadlineResult.value, userId };
+        const taskData = { title, description, status, deadline: deadlineResult.value, userId, category, priority };
 
         // Create a new task instance and save it to the database
         const task = new Task( taskData );
@@ -109,7 +139,7 @@ async function updateTask(req, res) {
     try {
         const userID = req.user;
         const taskId = req.params.id;
-        const { title, description, status, deadline } = req.body;
+        const { title, description, status, deadline, category, priority } = req.body;
 
         if (!title || !deadline ) {
             return res.status(400).json({
@@ -121,6 +151,20 @@ async function updateTask(req, res) {
         if (statusError) {
             return res.status(400).json({
                 message: statusError
+            });
+        }
+
+        const categoryError = validateCategory(category);
+        if (categoryError) {
+            return res.status(400).json({
+                message: categoryError
+            });
+        }
+
+        const priorityError = validatePriority(priority);
+        if (priorityError) {
+            return res.status(400).json({
+                message: priorityError
             });
         }
 
@@ -137,7 +181,9 @@ async function updateTask(req, res) {
                 title,
                 description,
                 status,
-                deadline: deadlineResult.value
+                deadline: deadlineResult.value,
+                category,
+                priority
             },
             { returnDocument: 'after' }
         );

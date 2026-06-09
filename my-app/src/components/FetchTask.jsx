@@ -123,13 +123,33 @@ const FetchTask = ({ refreshTrigger = 0 }) => {
                                 )}
                             </div>
 
-                            <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-800">
-                                {task.status}
+                            <span
+                                className={`rounded-full px-3 py-1 text-xs font-bold ${task.priority === 'high' ? "bg-red-100 text-red-800" : task.priority === "medium" ? "bg-yellow-100 text-yellow-800" : "bg-green-100 text-green-800"} `}>
+                                    {task.priority}
                             </span>
+                                
                         </div>
 
                         <div className="mt-4 flex flex-col gap-3 rounded-2xl bg-white/70 p-3 sm:flex-row sm:items-center sm:justify-between">
                             <div className="grid gap-3 text-sm text-stone-600 sm:grid-cols-2">
+                                <div>
+                                    <p className="text-xs font-semibold uppercase tracking-wide text-stone-400">
+                                        Status
+                                    </p>
+                                    <p className="mt-1 font-medium text-stone-700">
+                                        {task.status}
+                                    </p>
+                                </div>
+
+                                <div>
+                                    <p className="text-xs font-semibold uppercase tracking-wide text-stone-400">
+                                        Category
+                                    </p>
+                                    <p className="mt-1 font-medium text-stone-700">
+                                        {task.category}
+                                    </p>
+                                </div> 
+
                                 <div>
                                     <p className="text-xs font-semibold uppercase tracking-wide text-stone-400">
                                         Deadline
