@@ -87,10 +87,10 @@ const CreateTask = () => {
     }
 
     return (
-        <main className="min-h-screen bg-stone-50 px-4 py-8 text-stone-900">
-            <section className="mx-auto max-w-6xl">
+        <main className="min-h-screen bg-stone-50 px-15 py-8 text-stone-900">
+            <section className="mx-auto max-w-8xl">
                 <div className="mb-8">
-                    <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-start justify-between gap-4">
                         <div>
                             <p className="text-sm font-semibold uppercase tracking-[0.25em] text-emerald-700">
                                 Planner
