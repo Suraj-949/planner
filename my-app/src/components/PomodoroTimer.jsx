@@ -1,8 +1,15 @@
 import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useContext } from "react";
+import { AuthContext } from "../AuthProvider";
+
 
 const PomodoroTimer = () => {
     const focusTime = 25 * 60;
     const breakTime = 5 * 60;
+
+    const navigate = useNavigate()
+    const { setIsAuthenticated } = useContext(AuthContext)
 
     const [timeLeft, setTimeLeft] = useState(() => {
         return Number(localStorage.getItem("timeLeft")) || focusTime;
@@ -168,13 +175,23 @@ const PomodoroTimer = () => {
                             </h1>
                         </div>
 
-                        <button
-                            type="button"
-                            onClick={handleLogout}
-                            className="rounded-2xl border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-700 transition hover:border-stone-400 hover:bg-stone-100"
-                        >
-                            Logout
-                        </button>
+                        <div className="flex flex-row gap-4">
+                            <button
+                                type="button"
+                                onClick={()=>{navigate("/create-task")}}
+                                className="rounded-2xl border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-700 transition hover:border-stone-400 hover:bg-stone-100"
+                            >
+                                Tasks
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={handleLogout}
+                                className="rounded-2xl border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-700 transition hover:border-stone-400 hover:bg-stone-100"
+                            >
+                                Logout
+                            </button>
+                        </div>
                     </div>
 
                     <p className="mt-3 text-stone-600">
