@@ -4,7 +4,7 @@ import { Ellipsis, PencilLine, X } from 'lucide-react'
 
 import UpdateTaskModal from './UpdateTaskModal'
 
-const FetchTask = ({ refreshTrigger = 0, onStatsChange }) => {
+const FetchTask = ({ refreshTrigger = 0, onStatsChange, onStreakChange }) => {
     const [tasks, setTasks] = useState([])
     const [isLoading, setIsLoading] = useState(false)
     const [error, setError] = useState('')
@@ -278,6 +278,7 @@ const FetchTask = ({ refreshTrigger = 0, onStatsChange }) => {
                     task={editingTask}
                     onClose={() => setEditingTask(null)}
                     onUpdated={handleUpdated}
+                    onStreakChange={onStreakChange}
                 />
             )}
         </section>

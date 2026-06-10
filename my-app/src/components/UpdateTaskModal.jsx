@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import axiosInstance from '../axiosInstance'
 import { Check, LoaderCircle, X } from 'lucide-react'
+import updateStreak from '../utility/updateStreak'
+
 
 const formatDateForInput = (dateValue) => {
     if (!dateValue) return ''
@@ -8,7 +10,11 @@ const formatDateForInput = (dateValue) => {
     return Number.isNaN(date.getTime()) ? '' : date.toISOString().slice(0, 10)
 }
 
-const UpdateTaskModal = ({ task, onClose, onUpdated }) => {
+const UpdateTaskModal = ({ task, onClose, onUpdated, onStreakChange }) => {
+
+    const [, setStreak] = useState(
+        Number(localStorage.getItem('streak')) || 0
+    )
 
     // initiallly set form data to empty values, will be updated when task prop changes
     const [formData, setFormData] = useState({
@@ -46,7 +52,7 @@ const UpdateTaskModal = ({ task, onClose, onUpdated }) => {
     }
 
     const handleSubmit = async (event) => {
-        event.preventDefault()
+        event.preventDefault()          
 
         if (!formData.title.trim() || !formData.deadline) {
             setError('Title and deadline are required.')
@@ -57,6 +63,9 @@ const UpdateTaskModal = ({ task, onClose, onUpdated }) => {
             setIsSaving(true)
             setError('')
 
+            const oldStatus = task.status
+            const newStatus = formData.status
+
             await axiosInstance.put(`/tasks/update/${task._id}`, {
                 title: formData.title,
                 description: formData.description,
@@ -66,10 +75,21 @@ const UpdateTaskModal = ({ task, onClose, onUpdated }) => {
                 priority: formData.priority
             })
 
+            // update streak only once
+            if (
+                oldStatus !== "completed" &&
+                newStatus === "completed"
+            ) {
+                const newStreak = updateStreak()
+                setStreak(newStreak)
+                onStreakChange?.(newStreak)
+            }
+
             await onUpdated('Task updated successfully.')
             onClose()
         } catch (err) {
             setError(err.response?.data?.message || 'Task update failed.')
+            console.error("Update error: ", err)
         } finally {
             setIsSaving(false)
         }

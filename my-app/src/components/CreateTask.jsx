@@ -8,6 +8,8 @@ import axiosInstance from '../axiosInstance'
 import FetchTask from './FetchTask'
 import { useEffect } from 'react'
 
+import updateStreak from '../utility/updateStreak'
+
 // Initial state object for new task form
 const initialTask = {
     title: '',
@@ -26,6 +28,10 @@ const CreateTask = () => {
     const [message, setMessage] = useState('')
     const [error, setError] = useState('')
     const [refreshTrigger, setRefreshTrigger] = useState(0)
+
+    const [streak, setStreak] = useState(() => {
+        return Number(localStorage.getItem("streak")) || 0
+    })
 
     const [taskStats, setTaskStats] = useState({
         totalTasks: 0,
@@ -77,6 +83,11 @@ const CreateTask = () => {
             setTask(initialTask)
             setMessage('Task created successfully!')
             setRefreshTrigger((currentValue) => currentValue + 1)
+            
+            if (task.status === "completed") {
+                const newStreak = updateStreak()
+                setStreak(newStreak)
+            }
 
         } catch (err) {
             // Show backend error message if available
@@ -84,7 +95,7 @@ const CreateTask = () => {
         } finally {
             setIsLoading(false)
         }
-    }
+    }   
 
     return (
         <main className="min-h-screen bg-stone-50 px-15 py-8 text-stone-900">
@@ -124,40 +135,95 @@ const CreateTask = () => {
                     </p>
                 </div>
 
-                <section className="mb-6 rounded-3xl border border-emerald-100 bg-white p-6 shadow-sm">
-                    <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-                        <div>
-                            <p className="text-sm font-semibold uppercase tracking-[0.2em] text-emerald-700">Progress tracker</p>
-                            <h2 className="mt-2 text-2xl font-semibold text-stone-900">Your completion overview</h2>
-                            <p className="mt-1 text-sm text-stone-600">Track how many tasks are done, in progress, and still waiting.</p>
+               <section className="mb-6 rounded-3xl border border-emerald-100 bg-white p-6 shadow-sm">
+                <div className="grid grid-cols-12 gap-6">
+
+                    {/* LEFT SIDE - 80% */}
+                    <div className="col-span-12 lg:col-span-9">
+                        {/* HEADER */}
+                        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                            <div>
+                                <p className="text-sm font-semibold uppercase tracking-[0.2em] text-emerald-700">
+                                    Progress tracker
+                                </p>
+                                <h2 className="mt-2 text-2xl font-semibold text-stone-900">
+                                    Your completion overview
+                                </h2>
+                                <p className="mt-1 text-sm text-stone-600">
+                                    Track how many tasks are done,
+                                    in progress, and still waiting.
+                                </p>
+
+                            </div>
+
+                            <div className="rounded-2xl bg-emerald-50 px-4 py-3 text-right">
+
+                                <p className="text-xs uppercase tracking-[0.25em] text-emerald-700">
+                                    Completion rate
+                                </p>
+
+                                <p className="text-3xl font-semibold text-emerald-900">
+                                    {Math.round(taskStats.progress)}%
+                                </p>
+
+                            </div>
+
                         </div>
-                        <div className="rounded-2xl bg-emerald-50 px-4 py-3 text-right">
-                            <p className="text-xs uppercase tracking-[0.25em] text-emerald-700">Completion rate</p>
-                            <p className="text-3xl font-semibold text-emerald-900">{Math.round(taskStats.progress)}%</p>
+
+                        {/* PROGRESS BAR */}
+                        <div className="mt-5 h-3 rounded-full bg-stone-200 overflow-hidden">
+                            <div
+                                className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-lime-400 transition-all duration-300"
+                                style={{
+                                    width: `${taskStats.progress}%`
+                                }}
+                            />
+                        </div>
+
+                        {/* STATS CARDS */}
+                        <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                            {[
+                                {label: 'Total tasks', value: taskStats.totalTasks},
+                                {label: 'Commpleted', value: taskStats.completedTasks},
+                                {label: 'In progress', value: taskStats.inProgressTasks},
+                                {label: 'Pending', value: taskStats.pendingTasks}
+
+                            ].map((item) => (
+
+                                <article
+                                    key={item.label}
+                                    className="rounded-2xl border border-stone-200 bg-stone-50 p-5 shadow-sm transition hover:shadow-md"
+                                >
+                                    <p className="text-sm text-stone-500">
+                                        {item.label}
+                                    </p>
+                                    <p className="mt-3 text-3xl font-bold text-stone-900">
+                                        {item.value}
+                                    </p>
+                                </article>
+                            ))}
                         </div>
                     </div>
 
-                    <div className="mt-5 h-3 rounded-full bg-stone-200">
-                        <div
-                            className="h-3 rounded-full bg-gradient-to-r from-emerald-500 to-lime-400 transition-all duration-300"
-                            style={{ width: `${taskStats.progress}%` }}
-                        /> 
+                    {/* RIGHT SIDE - 20% */}
+                    <div className="col-span-12 lg:col-span-3">
+                        <div className="h-full rounded-3xl border border-orange-200 bg-gradient-to-br from-orange-100 to-orange-50 p-6 shadow-sm flex items-center justify-center">
+                            <div className="text-center">
+                                <p className="text-sm font-semibold uppercase tracking-[0.2em] text-orange-700">
+                                    Current streak
+                                </p>
+                                <h2 className="mt-4 text-5xl font-bold text-orange-800">
+                                    🔥 {streak}
+                                </h2>
+                                <p className="mt-3 text-sm text-orange-600">
+                                    Keep completing tasks daily
+                                </p>
+                            </div>
+                        </div>
                     </div>
+                </div>
 
-                    <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                        {[
-                            { label: 'Total tasks', value: taskStats.totalTasks },
-                            { label: 'Completed', value: taskStats.completedTasks },
-                            { label: 'In progress', value: taskStats.inProgressTasks },
-                            { label: 'Pending', value: taskStats.pendingTasks }
-                        ].map((item) => (
-                            <article key={item.label} className="rounded-2xl border border-stone-200 bg-stone-50 p-4 shadow-sm">
-                                <p className="text-sm text-stone-500">{item.label}</p>
-                                <p className="mt-2 text-3xl font-semibold text-stone-900">{item.value}</p>
-                            </article>
-                        ))}
-                    </div>
-                </section>
+            </section>
 
                 <div className="grid gap-8 lg:grid-cols-2 lg:items-start">
                     <form
@@ -290,7 +356,11 @@ const CreateTask = () => {
                     </form>
 
                     <div className="lg:sticky lg:top-8">
-                        <FetchTask refreshTrigger={refreshTrigger} onStatsChange={setTaskStats} />
+                        <FetchTask
+                            refreshTrigger={refreshTrigger}
+                            onStatsChange={setTaskStats}
+                            onStreakChange={setStreak}
+                        />
                     </div>
                 </div>
             </section>
@@ -298,4 +368,4 @@ const CreateTask = () => {
     )
 }   
 
-export default CreateTask
+export default CreateTask;
