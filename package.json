@@ -1,0 +1,27 @@
+{
+  "name": "planner",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Planner — task and focus dashboard with an Express API",
+  "workspaces": [
+    "backend",
+    "my-app"
+  ],
+  "scripts": {
+    "dev": "concurrently -n api,web -c cyan,magenta \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "npm run dev --workspace backend",
+    "dev:web": "npm run dev --workspace my-app",
+    "build": "npm run build --workspace my-app",
+    "lint": "npm run lint --workspace my-app",
+    "test": "npm run test --workspace backend",
+    "start": "npm run start --workspace backend",
+    "seed": "npm run seed --workspace backend",
+    "verify": "npm run lint && npm run test && npm run build"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

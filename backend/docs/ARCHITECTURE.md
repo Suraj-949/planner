@@ -227,17 +227,38 @@ untouched and non-browser API clients keep working. Full rationale is in R-CSRF-
 ## 9. Configuration
 
 Environment is validated at boot and fails fast, rather than letting `undefined` reach
-`jwt.sign`.
+`jwt.sign`. `connectDB()` calls `assertEnv()` before opening a connection, so a missing or
+undersized `JWT_SECRET` fails at boot rather than on the user's first login.
+
+### Backend
+
+Templates: `backend/.env.example`. Copy to `.env`; both are covered by `.gitignore`.
 
 | Variable | Required | Purpose |
 |---|---|---|
 | `MONGO_URI` | yes | MongoDB connection string |
 | `JWT_SECRET` | yes | HMAC secret for all tokens, minimum 32 characters |
 | `NODE_ENV` | in prod | Drives cookie security flags and log level |
-| `PORT` | no | Defaults to `3000` |
-| `HOST` | no | Defaults to `0.0.0.0` |
+| `PORT` | no | Defaults to `3000`. Injected by most PaaS platforms |
+| `HOST` | no | Defaults to `0.0.0.0`. Must stay `0.0.0.0` behind a proxy |
 | `CORS_ORIGINS` | in prod | Comma-separated allowlist, also read by the CSRF guard |
-| `LOG_LEVEL` | no | Defaults to `info` outside production |
+| `LOG_LEVEL` | no | `error` \| `warn` \| `info` \| `debug`. Defaults to `info` |
+| `SEED_USERNAME` | no | Seed script only. Defaults to `demo` |
+| `SEED_EMAIL` | no | Seed script only. Defaults to `demo@planner.local` |
+| `SEED_PASSWORD` | no | Seed script only. Defaults to `demo1234` |
+
+### Frontend
+
+Template: `my-app/.env.example`, copied to `.env`. Only `VITE_`-prefixed variables reach
+the browser bundle.
+
+| Variable | Purpose |
+|---|---|
+| `VITE_BASE_BACKEND_URL` | API base URL including the `/api` prefix |
+
+Because Vite inlines `VITE_*` at **build** time, changing this needs a rebuild, not a
+restart. Everything else in this table is a secret-free public value by design; secrets
+live only in backend variables.
 
 `CORS_ORIGINS` is read in two places — the CORS layer and the CSRF guard. Both resolve it
 the same way. Deduplicating that into one module is a reasonable Phase 2 cleanup.
@@ -246,27 +267,47 @@ the same way. Deduplicating that into one module is a reasonable Phase 2 cleanup
 
 ## 10. Testing
 
-**No test suite currently exists.** The `backend/tests/` directory has been removed, so
-`npm test` has nothing to run and the `test` script in `package.json` points at a path that
-no longer exists.
+`npm test` runs `node --test "tests/**/*.test.js"`. 59 tests, no framework dependency —
+Node's built-in runner is the only harness.
 
-The suite that was removed covered the following, and is worth restoring before any further
-work on the API:
+| File | Tests | Scope |
+|---|---|---|
+| `tests/taskValidation.test.js` | 21 | Required fields, enums, empty-string enums, trimming, unknown fields, `context`/`estimateMinutes`/`tags`/`subtasks` rules, local-noon anchoring, a 10-timezone rendering matrix |
+| `tests/tokens.test.js` | 9 | Signing, expiry, wrong-secret rejection, tampered payload, type separation, access/refresh lifetime ordering |
+| `tests/auth.middleware.test.js` | 11 | Missing, malformed, non-Bearer, wrong-type, expired, RFC 7235 case-insensitive scheme, no credential leakage |
+| `tests/csrf.test.js` | 8 | Origin and Referer allow/deny, cookie scoping, safe methods, non-browser clients |
+| `tests/task.controller.test.js` | 25 | CRUD against a real database, per-user isolation, update-returns-post-image, envelope shape, default values, dashboard-field round-trip, `$unset` clearing |
 
-| File | Scope |
-|---|---|
-| `tests/taskValidation.test.js` | Required fields, enums, trimming, unknown fields, local-noon anchoring |
-| `tests/tokens.test.js` | Signing, expiry, wrong-secret rejection, token-type separation |
-| `tests/auth.middleware.test.js` | Valid, missing, malformed, wrong-type, expired tokens |
-| `tests/csrf.test.js` | Origin and Referer allow/deny, cookie scoping, non-browser clients |
+Controllers run against `mongodb-memory-server`, so the suite needs no external database
+and never touches development data.
 
-Until it is restored, the Phase 1 corrections in this document — local-noon deadlines,
-`runValidators` on updates, token-type separation, and the CSRF origin check — have no
-automated regression cover.
+### Why the suite is written the way it is
 
-Not yet covered even before removal: controllers against a real request, and any
-live-database integration. Those are Phase 2 and should use `supertest` with
-`mongodb-memory-server`, or mocked models if the binary download is unacceptable in CI.
+Several tests here look fussy about things a status-code assertion would miss, because
+each of them corresponds to a defect that shipped:
+
+- The timezone matrix sets `process.env.TZ` across ten real-world offsets. Checking only
+  the host timezone passed for months, because the host sits east of UTC where a midnight
+  anchor survives. One test asserts the *naive* parse really does shift a day, so the
+  matrix cannot silently become vacuous.
+- `updateTask returns the document as it is after the change` exists because
+  `findOneAndUpdate` defaults to the pre-update document, so the response showed stale data.
+- Cross-user tests assert on the database afterwards, not just the HTTP status.
+
+### Known limitation: `runValidators` is unreachable
+
+The controller passes `runValidators: true`, but no test can prove it is doing anything,
+and removing it does not fail the suite. That is expected, not an oversight: the validator
+and the schema enums are currently identical, so `validateTaskPayload` rejects every bad
+value before Mongo is reached. Mutation testing confirms removing the option is invisible.
+
+It is kept as defence in depth — the moment a field is added to the schema without a
+matching validator rule, it becomes the only thing stopping a corrupt write. The schema
+now mirrors the validator's `maxlength` limits so the two layers agree, and
+`the schema enforces the same title limit as the validator` guards that.
+
+Deliberately not covered: authentication flows against a live database, the refresh-token
+rotation path, and the rate limiters. Those are Phase 2.
 
 ---
 
@@ -274,18 +315,52 @@ live-database integration. Those are Phase 2 and should use `supertest` with
 
 ```text
 ┌────────────────┐      ┌─────────────────┐      ┌──────────────┐
-│ Static host    │      │ Node host       │      │ MongoDB      │
-│ (Vercel/Netlify│─────►│ (Render/Railway)│─────►│ (Atlas)      │
+│ Static host    │      │ Node host       │─────►│ MongoDB      │
+│ (Vercel/Netlify│─────►│ (Render/Railway)│      │ (Atlas)      │
 └────────────────┘      └─────────────────┘      └──────────────┘
 ```
 
-Production requirements:
+`render.yaml` at the repository root provisions this as a blueprint: a Dockerised Node
+API plus a static frontend, with a one-off job for seeding.
+
+### Image
+
+`backend/Dockerfile` is a two-stage build. It must be built from the **repository root**:
+
+```bash
+docker build -f backend/Dockerfile -t planner-api .
+```
+
+The root is required because npm workspaces resolve every package from the root lockfile.
+Building from `backend/` would resolve fresh versions on each build and could drift from
+what CI tested. `.dockerignore` sits at the repository root for the same reason — Docker
+reads it from the build context, not from the Dockerfile's directory.
+
+The image runs as the unprivileged `node` user, declares a `HEALTHCHECK` against
+`/api/health`, and uses exec form so `node` is PID 1 and receives `SIGTERM`, which the
+graceful shutdown handler needs in order to close the Mongo connection.
+
+### Production requirements
 
 - `NODE_ENV=production` — enables `secure` cookies and cross-origin `sameSite` settings
 - `CORS_ORIGINS` set to the actual frontend host. CORS is never hardcoded.
 - `JWT_SECRET` from the platform secret store, never committed
 - `MONGO_URI` with IP allowlist enabled on Atlas
 - HTTPS terminated at both hosts — the `Secure` cookie flag requires it
+
+### Verifying a deployment
+
+The refresh token is an HTTP-only cookie, and browsers silently drop a `Secure` cookie
+sent over plain HTTP. A deployment can therefore pass every local test and still fail
+sign-in. `npm run verify:deploy -- <apiUrl> <frontendOrigin>` checks the wire-level
+behaviour: health and envelope, that CORS echoes the real origin with credentials allowed,
+that an unknown origin is refused, that the cookie is `HttpOnly`/`Secure`/`SameSite=None`
+with no `Domain`, and that CSRF blocks a foreign-origin write. It exits non-zero on
+failure, so it can gate a deploy.
+
+It inspects headers only. Whether a browser actually *stores* the cookie still needs the
+manual check: log in from a real browser, confirm no cookie error in the console, then
+hard-reload and confirm the session survives the access token expiring.
 
 ---
 

@@ -64,28 +64,42 @@ Two separate npm packages, no monorepo tooling and no root `package.json` yet.
 
 ```text
 planner/
+├── package.json                   # npm workspaces + dev/build/seed/verify scripts
+├── package-lock.json
+├── .gitignore
+├── .dockerignore                  # Read from the build context (repo root)
+├── render.yaml                    # Render blueprint: API + static frontend + seed job
 ├── README.md
 ├── ROADMAP.md
 ├── DOMAIN.md                      # Shared glossary, principles, enums, invariants
+├── .github/workflows/ci.yml       # Lint, test, build, audit, image build
 │
-├── backend/                      # Express REST API (CommonJS)
-│   ├── server.js                 # Entry point — connects DB, listens on PORT
-│   ├── .env / .env.example      # gitignored / committed
-│   ├── docs/                     # Backend architecture + business rules
+├── backend/                       # Express REST API (CommonJS)
+│   ├── server.js                  # Entry point — connects DB, listens on PORT
+│   ├── Dockerfile                 # Two-stage build; build from the repo root
+│   ├── .env / .env.example        # gitignored / committed
+│   ├── docs/                      # Backend architecture + business rules
 │   │   ├── ARCHITECTURE.md
 │   │   └── BUSINESS-LOGIC.md
+│   ├── tests/                     # node:test suite — npm test
+│   │   ├── taskValidation.test.js
+│   │   ├── tokens.test.js
+│   │   ├── auth.middleware.test.js
+│   │   ├── csrf.test.js
+│   │   └── task.controller.test.js  # runs against an in-memory MongoDB
 │   └── src/
 │       ├── app.js                # Middleware chain + route mounting
 │       ├── db/
-│       │   └── db.js             # mongoose.connect wrapper + shutdown
+│       │   └── db.js             # mongoose.connect wrapper + env validation
 │       ├── utils/
-│       │   ├── tokens.js         # JWT sign/verify, access vs refresh type separation
+│       │   ├── tokens.js         # JWT sign/verify, access vs refresh type separation, cookies
 │       │   ├── taskValidation.js  # Payload rules + local-noon deadline parsing
 │       │   ├── response.js       # { ok, data } envelope helpers
+│       │   ├── http.js           # ApiError + asyncHandler
 │       │   └── logger.js         # Structured JSON logger with redaction
 │       ├── models/
 │       │   ├── user.model.js     # User schema
-│       │   └── task.model.js     # Task schema + indexes
+│       │   └── task.model.js     # Task schema + indexes + enum/length constraints
 │       ├── controllers/
 │       │   ├── auth.controller.js    # register, login, refreshToken, logout
 │       │   └── task.controller.js    # create, fetch, update, delete
@@ -93,10 +107,13 @@ planner/
 │       │   ├── auth.routes.js    # /api/auth/*
 │       │   └── task.routes.js    # /api/tasks/*
 │       ├── middleware/
-│       │   ├── auth.middleware.js     # Bearer token → req.user
+│       │   ├── auth.middleware.js     # Bearer token → req.user (RFC 7235 scheme)
 │       │   ├── rateLimit.middleware.js# auth + API limits
 │       │   ├── csrf.middleware.js    # origin check on cookie requests
 │       │   └── requestId.middleware.js# request correlation
+│       └── scripts/
+│           ├── seed.js           # npm run seed — idempotent demo data
+│           └── verify-deploy.js  # npm run verify:deploy — post-deploy header checks
 │
 └── my-app/                       # React client (ESM)
     ├── .env / .env.example
@@ -140,51 +157,82 @@ planner/
 
 ### Prerequisites
 
-* Node.js 18+
+* Node.js 20+
 * A running MongoDB instance (local or Atlas)
 
-### 1. Backend
+### Install
+
+This is an npm-workspaces repository, so install **once at the root** rather than in each
+package:
 
 ```bash
-cd backend
 npm install
 ```
 
-Create `backend/.env` — see `backend/.env.example` for the full list:
+### Configure
+
+Two files, both gitignored. Copy the templates:
+
+```bash
+cp backend/.env.example backend/.env
+cp my-app/.env.example my-app/.env
+```
+
+`backend/.env` needs at least:
 
 ```env
 MONGO_URI=mongodb://127.0.0.1:27017/planner
-JWT_SECRET=your-long-random-secret
+JWT_SECRET=your-long-random-secret-at-least-32-chars
 ```
 
-Run:
+Generate a suitable secret with:
 
 ```bash
-npm start          # node server.js
+node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
 ```
 
-Defaults to port **3000**, override with `PORT`.
-
-### 2. Client
-
-```bash
-cd my-app
-npm install
-```
-
-Create `my-app/.env`:
+`my-app/.env` needs:
 
 ```env
 VITE_BASE_BACKEND_URL=http://localhost:3000/api
 ```
 
-Run:
+Full variable reference: `backend/docs/ARCHITECTURE.md` §9.
+
+### Run
 
 ```bash
-npm run dev
+npm run dev      # API on :3000 and Vite on :5173, together
 ```
 
-Vite serves on **5173**, which must be listed in `CLIENT_ORIGIN` on the backend.
+Individually:
+
+```bash
+npm run dev:api  # backend only
+npm run dev:web  # frontend only
+```
+
+Vite serves on **5173**, which must be listed in `CORS_ORIGINS` on the backend. Both
+`http://localhost:5173` and `http://127.0.0.1:5173` are needed — a browser treats them as
+different origins.
+
+### Seed demo data
+
+```bash
+npm run seed
+```
+
+Creates a `demo` user and a spread of tasks, and prints the credentials. It replaces that
+user's tasks on each run rather than duplicating them. Point `MONGO_URI` somewhere you do
+not mind before running it.
+
+### Verify
+
+```bash
+npm run verify    # lint + test + build
+```
+
+The backend suite needs no database — controllers run against an in-memory MongoDB.
 
 ---
 

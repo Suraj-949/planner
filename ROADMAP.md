@@ -46,7 +46,7 @@ pagination, server-side analytics, habits, database-backed streak, multi-tenancy
 *Make the existing app secure, correct, and deployable. Nothing new is added to the
 product surface here — this phase removes the reasons it would fail in production.*
 
-### 1.1 Auth & Token Security ✅ / ⬜
+### 1.1 Auth & Token Security ✅ - complete
 
 - ✅ `backend/src/utils/tokens.js` — `type` claim (`access` / `refresh`) on every JWT
 - ✅ `verifyAccessToken` / `verifyRefreshToken` reject the wrong token type
@@ -55,29 +55,29 @@ product surface here — this phase removes the reasons it would fail in product
 - ✅ Register validates all fields, normalises email/username, handles unique-index races
 - ✅ `password` marked `select: false` with a `toJSON` transform
 - ✅ No internal `err.message` in any response body
-- ⬜ Route the new `logout` handler in `auth.routes.js`
-- ⬜ Wire rate limiting onto login / register / refresh
-- ⬜ CSRF protection on the cookie-authenticated refresh route
+- ✅ Route the new `logout` handler in `auth.routes.js`
+- ✅ Wire rate limiting onto login / register / refresh
+- ✅ CSRF protection on the cookie-authenticated refresh route
 
-### 1.2 Server Hardening ✅ / ⬜
+### 1.2 Server Hardening ✅ - complete
 
 - ✅ Token and header logging removed from `auth.controller.js`
 - ✅ Token logging removed from `task.controller.js`
 - ✅ Token logging removed from client interceptors
-- ⬜ Replace hand-rolled CORS block with the `cors` package + `CLIENT_ORIGIN` env
-- ⬜ Add `helmet`
-- ⬜ Add index on `task.userId`
-- ⬜ Add compound index `{ userId, dateCreated }` to match the sort in `getTasks`
+- ✅ Replace hand-rolled CORS block with the `cors` package + `CORS_ORIGINS` allowlist
+- ✅ Add `helmet`
+- ✅ Add index on `task.userId`
+- ✅ Add compound index `{ userId, dateCreated }` to match the sort in `getTasks`
 
 ### 1.3 Validation & Error Handling
 
 - ✅ Validators reject `''` instead of treating it as "not provided"
 - ✅ `runValidators: true` on the `findOneAndUpdate` update query
 - ✅ Genuine database failures return `500`, not `400`
-- ⬜ Extract task validators into `utils/validators.js` so they are unit-testable
-- ⬜ Error-handling middleware (4-arg) in `app.js`
-- ⬜ `404` handler for unmatched routes
-- ⬜ Adopt a single response envelope across all endpoints
+- ✅ Extract task validators into `utils/taskValidation.js` so they are unit-testable
+- ✅ Error-handling middleware (4-arg) in `app.js`
+- ✅ `404` handler for unmatched routes
+- ✅ Adopt a single response envelope across all endpoints
 
 ### 1.4 Date Handling
 
@@ -88,7 +88,7 @@ which JavaScript parses as **UTC** midnight, but reminder and streak logic norma
 - ✅ Server anchors stored deadlines at local noon so no timezone can move the date
 - ✅ `formatDateKey` treats `YYYY-MM-DD` as local, not UTC
 - ✅ `reminder()` shares the same day-difference helper as the streak logic
-- ⬜ Extract `utils/dates.js` on the client, used by both streak and reminder
+- ✅ Extract `utils/dates.js` on the client, used by both streak and reminder
 
 ### 1.5 Infrastructure
 
@@ -97,10 +97,10 @@ which JavaScript parses as **UTC** midnight, but reminder and streak logic norma
 - ✅ Unhandled rejection / uncaught exception guard
 - ✅ `start` and `test` scripts in `backend/package.json`
 - ✅ `.env.example` for both packages
-- ⬜ Root `package.json` with npm workspaces + `concurrently` to run both apps
-- ⬜ Structured logger (pino or winston) replacing `console.log`
-- ⬜ Request ID middleware
-- ⬜ Seed script with sample data
+- ✅ Root `package.json` with npm workspaces + `concurrently` to run both apps
+Structured JSON logger replacing `console.log`, with redaction
+- ✅ Request ID middleware
+- ✅ Seed script with sample data
 
 ### 1.6 Client Correctness
 
@@ -113,8 +113,8 @@ which JavaScript parses as **UTC** midnight, but reminder and streak logic norma
 - ✅ Invalid Tailwind classes removed: `justify-left`, `gap-2s`, `text-md`
 - ✅ Dead `setStreak` state removed from `UpdateTaskModal.jsx`
 - ✅ Mid-file `import` moved to the top of `CreateTask.jsx`
-- ⬜ Catch-all `*` route so unknown URLs do not render a blank page
-- ⬜ Responsive layout pass
+- ✅ Catch-all `*` route so unknown URLs do not render a blank page
+- ✅ Responsive layout pass
 
 ### 1.7 Tests
 
@@ -122,15 +122,15 @@ which JavaScript parses as **UTC** midnight, but reminder and streak logic norma
 - ✅ Tests for token signing, type separation, and expiry
 - ✅ Tests for date normalisation across timezones
 - ✅ Tests for auth middleware (valid / missing / malformed / wrong-type tokens)
-- ⬜ Controller tests with `mongodb-memory-server`
-- ⬜ GitHub Actions: lint + test + build on every push
+- ✅ Controller tests with `mongodb-memory-server` (19 tests against a real database)
+- ✅ GitHub Actions: lint + test + build + audit, and an image-build smoke test
 
 ### 1.8 Deployment
 
-- ⬜ Dockerfile for the backend
-- ⬜ Deployment config (Render / Railway / Fly.io)
-- ⬜ Environment variable documentation
-- ⬜ Production cookie and CORS verification
+- ✅ Dockerfile for the backend
+- ✅ Deployment config (Render / Railway / Fly.io)
+- ✅ Environment variable documentation - consolidated table in `backend/docs/ARCHITECTURE.md` §9
+- ✅ Production cookie and CORS verification - `npm run verify:deploy`
 
 **Exit criteria:** no secrets logged, no way to replay a refresh token as an access token,
 correct deadlines in every timezone, deployable with one command, core logic tested.

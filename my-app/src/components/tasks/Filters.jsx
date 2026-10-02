@@ -1,5 +1,5 @@
 import Input from '../ui/Input'
-import { TASK_FILTERS, VIEW_MODES } from '../../constants/taskMeta'
+import { TASK_FILTERS, VIEW_MODES, PROJECTS } from '../../constants/taskMeta'
 import { LayoutList, KanbanSquare, CalendarDays } from 'lucide-react'
 
 const VIEW_ICONS = {
@@ -29,6 +29,7 @@ const Filters = ({
     dueDate,
     onDueDateChange,
     onNewTask,
+    counts,
 }) => {
     return (
         <div className="space-y-2">
@@ -108,7 +109,12 @@ const Filters = ({
                                 }`}
                             >
                                 {meta.label}
-                                <span className="tabular-nums opacity-70">{meta.count}</span>
+                                {/* Counts come from the loaded task list; the design
+                                    reference shipped placeholders (14/7/5/24) that had no
+                                    relation to the rows actually rendered. */}
+                                {counts?.[tab] !== undefined && (
+                                    <span className="tabular-nums opacity-70">{counts[tab]}</span>
+                                )}
                             </button>
                         )
                     })}
@@ -141,18 +147,19 @@ const Filters = ({
                         <option value="low">Low</option>
                     </select>
 
-                    <span className="label-xs">Category</span>
+                    <span className="label-xs">Project</span>
                     <select
                         value={category}
                         onChange={(event) => onCategoryChange(event.target.value)}
-                        aria-label="Filter by category"
+                        aria-label="Filter by project"
                         className={SELECT_CLASS}
                     >
                         <option value="all">All</option>
-                        <option value="Engineering">Engineering</option>
-                        <option value="Design">Design</option>
-                        <option value="Strategy">Strategy</option>
-                        <option value="Infrastructure">Infrastructure</option>
+                        {PROJECTS.map((project) => (
+                            <option key={project} value={project}>
+                                {project}
+                            </option>
+                        ))}
                     </select>
 
                     <span className="label-xs">Due Date</span>

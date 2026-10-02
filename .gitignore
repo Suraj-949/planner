@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Environment files. Only the *.example templates are committed.
+.env
+.env.*
+!.env.example
+
+# Build output
+dist/
+build/
+my-app/dist/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor / OS noise
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Coverage and caches
+coverage/
+.nyc_output/
+.eslintcache

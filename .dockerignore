@@ -1,0 +1,28 @@
+# Docker reads .dockerignore from the BUILD CONTEXT root, which is the repository
+# root (`docker build -f backend/Dockerfile .`). Without this file the whole tree —
+# including every node_modules directory — would be sent to the daemon on every
+# build, which is slow and leaks local .env files into the context.
+
+# Dependencies are reinstalled inside the image from the lockfile, so never copy
+# host copies: they may have native modules built for a different platform.
+node_modules
+
+# Secrets. The examples are kept; the real files never enter the context.
+.env
+.env.*
+!.env.example
+
+# Not needed to run the API.
+.git
+.github
+my-app
+coverage
+*.log
+
+# Docs and editor noise.
+**/README.md
+**/docs
+.vscode
+.idea
+.DS_Store
+Thumbs.db

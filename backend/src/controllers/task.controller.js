@@ -48,12 +48,30 @@ const updateTask = asyncHandler(async (req, res) => {
         throw badRequest('No valid fields provided to update');
     }
 
+    /*
+     * A field the client explicitly nulled lands in `value` as `undefined`, meaning "clear
+     * this". Mongoose strips undefined keys out of `$set`, so passing that straight through
+     * silently ignored the request and returned the unchanged document — "clear the
+     * description" had never actually worked. Those keys go to `$unset` instead.
+     */
+    const set = Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined));
+    const unset = Object.fromEntries(
+        Object.keys(value)
+            .filter((key) => value[key] === undefined)
+            .map((key) => [key, 1])
+    );
+
+    const update = {};
+
+    if (Object.keys(set).length > 0) update.$set = set;
+    if (Object.keys(unset).length > 0) update.$unset = unset;
+
     // returnDocument was missing, so the *pre*-update document was sent back and the
     // client rendered stale data. runValidators was also missing, which let an
     // out-of-enum value be written straight to Mongo.
     const task = await Task.findOneAndUpdate(
         { _id: id, userId: req.user },
-        { $set: value },
+        update,
         { returnDocument: 'after', runValidators: true }
     );
 

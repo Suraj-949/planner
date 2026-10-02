@@ -56,6 +56,11 @@ browser can produce, while breaking curl, mobile clients, and proxies that strip
 | R-TASK-9 | A task belonging to another user returns `404`, not `403` |
 | R-TASK-10 | Deletion is permanent. There is no soft delete in v1 |
 | R-TASK-11 | An unknown field is rejected rather than silently dropped, so a typo cannot look like a successful write |
+| R-TASK-12 | `context` is the owning project, one of `Planner Core`, `Obsidian UI`, `Strategy 2025`, `Infrastructure`. **Optional with no default** — unlike `category`, which falls back to `other`, any project here would be a guess that files the task under the wrong one |
+| R-TASK-13 | `estimateMinutes` is stored as whole minutes in `0…1440`, never as a formatted `"1h 30m"` string. A stringified duration cannot be sorted, summed or aggregated, so the dashboard's time-total footer would have to be rebuilt client-side. Fractions and blanks are rejected; `null` clears the field |
+| R-TASK-14 | `tags` are free-text keywords backing dashboard search: trimmed, lowercased, de-duplicated, blanks dropped, at most 20 of 50 characters. Normalising on write means search matching never depends on how the user capitalised a word |
+| R-TASK-15 | `subtasks` are a checklist of `{ title, completed }`, capped at 50, and are **distinct from `tags`**. The UI previously fed checklist items into `tags`, conflating the two. A bare string is accepted as `{ title, completed: false }` because the dashboard panel still holds plain strings |
+| R-TASK-16 | An explicitly `null`ed optional field is **cleared**, via `$unset`. Mongoose strips `undefined` out of `$set`, so passing a cleared field through `$set` silently ignored the request and returned the unchanged document |
 
 ---
 
