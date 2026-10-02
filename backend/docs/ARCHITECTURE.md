@@ -4,9 +4,9 @@ How the Express API is built. CommonJS, modular monolith, one database.
 
 Related:
 
-- [`../DOMAIN.md`](../DOMAIN.md) — shared vocabulary and invariants
+- [`../../DOMAIN.md`](../../DOMAIN.md) — shared vocabulary and invariants
 - [`BUSINESS-LOGIC.md`](./BUSINESS-LOGIC.md) — server-enforced rules
-- [`../frontend/ARCHITECTURE.md`](../frontend/ARCHITECTURE.md) — the client
+- [`../../my-app/docs/ARCHITECTURE.md`](../../my-app/docs/ARCHITECTURE.md) — the client
 - [`../../README.md`](../../README.md) · [`../../ROADMAP.md`](../../ROADMAP.md)
 
 ---
@@ -246,7 +246,12 @@ the same way. Deduplicating that into one module is a reasonable Phase 2 cleanup
 
 ## 10. Testing
 
-Pure unit tests via `node:test`. No database or dev server required.
+**No test suite currently exists.** The `backend/tests/` directory has been removed, so
+`npm test` has nothing to run and the `test` script in `package.json` points at a path that
+no longer exists.
+
+The suite that was removed covered the following, and is worth restoring before any further
+work on the API:
 
 | File | Scope |
 |---|---|
@@ -255,11 +260,13 @@ Pure unit tests via `node:test`. No database or dev server required.
 | `tests/auth.middleware.test.js` | Valid, missing, malformed, wrong-type, expired tokens |
 | `tests/csrf.test.js` | Origin and Referer allow/deny, cookie scoping, non-browser clients |
 
-Run with `npm test`. **26 tests, all passing.**
+Until it is restored, the Phase 1 corrections in this document — local-noon deadlines,
+`runValidators` on updates, token-type separation, and the CSRF origin check — have no
+automated regression cover.
 
-Not yet covered: controllers against a real request, and any live-database integration. Those
-are Phase 2 and should use `supertest` with `mongodb-memory-server`, or mocked models if the
-binary download is unacceptable in CI.
+Not yet covered even before removal: controllers against a real request, and any
+live-database integration. Those are Phase 2 and should use `supertest` with
+`mongodb-memory-server`, or mocked models if the binary download is unacceptable in CI.
 
 ---
 

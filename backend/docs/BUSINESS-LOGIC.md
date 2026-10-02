@@ -3,11 +3,11 @@
 Server-enforced domain rules. Every rule here holds at the API boundary regardless of what
 the client sends.
 
-Shared vocabulary, principles, and invariants live in [`../DOMAIN.md`](../DOMAIN.md).
+Shared vocabulary, principles, and invariants live in [`../../DOMAIN.md`](../../DOMAIN.md).
 Architecture is in [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 
 **The backend is authoritative.** Nothing in
-[`../frontend/BUSINESS-LOGIC.md`](../frontend/BUSINESS-LOGIC.md) can relax a rule here.
+[`../../my-app/docs/BUSINESS-LOGIC.md`](../../my-app/docs/BUSINESS-LOGIC.md) can relax a rule here.
 
 ---
 

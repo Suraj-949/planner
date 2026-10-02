@@ -4,9 +4,9 @@ How the React SPA is built. React 19, Vite 8, ESM, Tailwind v4.
 
 Related:
 
-- [`../DOMAIN.md`](../DOMAIN.md) — shared vocabulary and invariants
+- [`../../DOMAIN.md`](../../DOMAIN.md) — shared vocabulary and invariants
 - [`BUSINESS-LOGIC.md`](./BUSINESS-LOGIC.md) — client rules and validation parity
-- [`../backend/ARCHITECTURE.md`](../backend/ARCHITECTURE.md) — the API
+- [`../../backend/docs/ARCHITECTURE.md`](../../backend/docs/ARCHITECTURE.md) — the API
 - [`../../README.md`](../../README.md) · [`../../ROADMAP.md`](../../ROADMAP.md)
 
 ---

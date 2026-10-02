@@ -1,9 +1,9 @@
 # Frontend — Business Logic
 
 Client-side rules. These exist for fast feedback and **never replace** the server rules in
-[`../backend/BUSINESS-LOGIC.md`](../backend/BUSINESS-LOGIC.md).
+[`../../backend/docs/BUSINESS-LOGIC.md`](../../backend/docs/BUSINESS-LOGIC.md).
 
-Shared vocabulary, principles, and invariants live in [`../DOMAIN.md`](../DOMAIN.md).
+Shared vocabulary, principles, and invariants live in [`../../DOMAIN.md`](../../DOMAIN.md).
 Architecture is in [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 
 ---

@@ -18,26 +18,27 @@ Documentation is split by the area it describes, so each file has one audience a
 |---|---|
 | [`README.md`](./README.md) | This file — current state, setup, API, models, known issues |
 | [`ROADMAP.md`](./ROADMAP.md) | Five-phase build plan |
-| [`docs/DOMAIN.md`](./docs/DOMAIN.md) | Shared glossary, derive-never-store principle, enums, invariants |
-| [`docs/backend/ARCHITECTURE.md`](./docs/backend/ARCHITECTURE.md) | Express layering, request lifecycle, auth flow, envelope, deployment |
-| [`docs/backend/BUSINESS-LOGIC.md`](./docs/backend/BUSINESS-LOGIC.md) | Server-enforced rules: auth, tasks, dates, validation |
-| [`docs/frontend/ARCHITECTURE.md`](./docs/frontend/ARCHITECTURE.md) | React layering, axios layer, state, routing, design system |
-| [`docs/frontend/BUSINESS-LOGIC.md`](./docs/frontend/BUSINESS-LOGIC.md) | Client validation parity, auth state, rendering rules, known gaps |
+| [`DOMAIN.md`](./DOMAIN.md) | Shared glossary, derive-never-store principle, enums, invariants |
+| [`backend/docs/ARCHITECTURE.md`](./backend/docs/ARCHITECTURE.md) | Express layering, request lifecycle, auth flow, envelope, deployment |
+| [`backend/docs/BUSINESS-LOGIC.md`](./backend/docs/BUSINESS-LOGIC.md) | Server-enforced rules: auth, tasks, dates, validation |
+| [`my-app/docs/ARCHITECTURE.md`](./my-app/docs/ARCHITECTURE.md) | React layering, axios layer, state, routing, design system |
+| [`my-app/docs/BUSINESS-LOGIC.md`](./my-app/docs/BUSINESS-LOGIC.md) | Client validation parity, auth state, rendering rules, known gaps |
 
 **Start here:**
 
 | You are | Read |
 |---|---|
-| Working on the API, models, or middleware | `docs/backend/ARCHITECTURE.md` |
-| Writing a controller or validator | `docs/backend/BUSINESS-LOGIC.md` |
-| Working on components, routing, or state | `docs/frontend/ARCHITECTURE.md` |
-| Building a form or a view | `docs/frontend/BUSINESS-LOGIC.md` |
-| Unsure what a term means | `docs/DOMAIN.md` |
+| Working on the API, models, or middleware | `backend/docs/ARCHITECTURE.md` |
+| Writing a controller or validator | `backend/docs/BUSINESS-LOGIC.md` |
+| Working on components, routing, or state | `my-app/docs/ARCHITECTURE.md` |
+| Building a form or a view | `my-app/docs/BUSINESS-LOGIC.md` |
+| Unsure what a term means | `DOMAIN.md` |
 
 **The backend is authoritative.** Every rule described as "server-enforced" holds at the API
 boundary regardless of what the client sends. The split makes that visible in the structure:
-`backend/BUSINESS-LOGIC.md` documents what the server guarantees, `frontend/BUSINESS-LOGIC.md`
-documents what the client mirrors for fast feedback and where that mirror currently disagrees.
+`backend/docs/BUSINESS-LOGIC.md` documents what the server guarantees,
+`my-app/docs/BUSINESS-LOGIC.md` documents what the client mirrors for fast feedback and where
+that mirror currently disagrees.
 
 **Why `DOMAIN.md` is separate.** The glossary, the derive-never-store principle, the enum
 values, and the invariants apply to both sides. Restating them in a backend file and a
@@ -65,20 +66,14 @@ Two separate npm packages, no monorepo tooling and no root `package.json` yet.
 planner/
 ├── README.md
 ├── ROADMAP.md
-│
-├── docs/                          # Documentation, split by area
-│   ├── README.md                 # Index
-│   ├── DOMAIN.md                 # Shared glossary, principles, enums, invariants
-│   ├── backend/
-│   │   ├── ARCHITECTURE.md
-│   │   └── BUSINESS-LOGIC.md
-│   └── frontend/
-│       ├── ARCHITECTURE.md
-│       └── BUSINESS-LOGIC.md
+├── DOMAIN.md                      # Shared glossary, principles, enums, invariants
 │
 ├── backend/                      # Express REST API (CommonJS)
 │   ├── server.js                 # Entry point — connects DB, listens on PORT
 │   ├── .env / .env.example      # gitignored / committed
+│   ├── docs/                     # Backend architecture + business rules
+│   │   ├── ARCHITECTURE.md
+│   │   └── BUSINESS-LOGIC.md
 │   └── src/
 │       ├── app.js                # Middleware chain + route mounting
 │       ├── db/
@@ -102,11 +97,13 @@ planner/
 │       │   ├── rateLimit.middleware.js# auth + API limits
 │       │   ├── csrf.middleware.js    # origin check on cookie requests
 │       │   └── requestId.middleware.js# request correlation
-│       └── tests/                # node:test unit tests (npm test)
 │
 └── my-app/                       # React client (ESM)
     ├── .env / .env.example
     ├── vite.config.js            # react + @tailwindcss/vite plugins
+    ├── docs/                     # Frontend architecture + business rules
+    │   ├── ARCHITECTURE.md
+    │   └── BUSINESS-LOGIC.md
     └── src/
         ├── main.jsx              # BrowserRouter + AuthProvider
         ├── App.jsx               # Route definitions
@@ -328,7 +325,7 @@ Create, update, and delete each surface a banner that auto-clears after three se
 
 ## ⚠️ Known Issues
 
-Full detail in [`docs/DOMAIN.md` §5](./docs/DOMAIN.md) and
+Full detail in [`DOMAIN.md` §5](./DOMAIN.md) and
 [`ROADMAP.md` Phase 1](./ROADMAP.md).
 
 **Resolved in Phase 1**

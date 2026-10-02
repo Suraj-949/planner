@@ -2,16 +2,17 @@
 
 Vocabulary, principles, and invariants shared by both sides of the application.
 
-This is the **canonical** copy. [`backend/BUSINESS-LOGIC.md`](./backend/BUSINESS-LOGIC.md)
-and [`frontend/BUSINESS-LOGIC.md`](./frontend/BUSINESS-LOGIC.md) link here rather than
+This is the **canonical** copy.
+[`backend/docs/BUSINESS-LOGIC.md`](./backend/docs/BUSINESS-LOGIC.md) and
+[`my-app/docs/BUSINESS-LOGIC.md`](./my-app/docs/BUSINESS-LOGIC.md) link here rather than
 restating these, so the two cannot disagree.
 
 Related:
 
-- [`../README.md`](../README.md) — documentation index and project state
-- [`backend/ARCHITECTURE.md`](./backend/ARCHITECTURE.md) — how the API is built
-- [`frontend/ARCHITECTURE.md`](./frontend/ARCHITECTURE.md) — how the SPA is built
-- [`../ROADMAP.md`](../ROADMAP.md) — phased build plan
+- [`README.md`](./README.md) — documentation index and project state
+- [`backend/docs/ARCHITECTURE.md`](./backend/docs/ARCHITECTURE.md) — how the API is built
+- [`my-app/docs/ARCHITECTURE.md`](./my-app/docs/ARCHITECTURE.md) — how the SPA is built
+- [`ROADMAP.md`](./ROADMAP.md) — phased build plan
 
 ---
 
