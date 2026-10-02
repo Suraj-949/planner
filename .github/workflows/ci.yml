@@ -46,6 +46,20 @@ jobs:
     name: Backend image builds
     runs-on: ubuntu-latest
 
+    # server.js awaits connectDB() before app.listen(), so the image cannot serve /api/health
+    # without a reachable database. Without this service the smoke test below polls a port
+    # nothing ever opens and fails after 30s.
+    services:
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ ping: 1 })'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - uses: actions/checkout@v4
 
@@ -56,18 +70,21 @@ jobs:
 
       - name: Smoke-test the container
         run: |
-          docker run -d --name api -p 3000:3000 \
+          # --network host is load-bearing: it puts the API container in the runner's
+          # network namespace, which is where the mongo service published 27017. On the
+          # default bridge, the container's 127.0.0.1 is the container itself, so
+          # MONGO_URI would point at nothing and the app would exit before listening.
+          docker run -d --name api --network host \
             -e MONGO_URI="mongodb://127.0.0.1:27017/planner" \
             -e JWT_SECRET="ci_secret_that_is_definitely_long_enough_32" \
             -e NODE_ENV=production \
             -e HOST=0.0.0.0 \
             planner-api:ci
 
-          # The container should refuse to start without a database rather than
-          # crash-loop silently, so only assert it is alive and listening.
           for i in $(seq 1 15); do
             if curl -fsS http://localhost:3000/api/health >/dev/null 2>&1; then
               echo "health endpoint responded"
+              curl -fsS http://localhost:3000/api/health
               docker rm -f api
               exit 0
             fi
