@@ -1,32 +1,40 @@
-const jwt = require('jsonwebtoken');
+const mongoose = require('mongoose');
+const { verifyAccessToken } = require('../utils/tokens');
+const { ApiError } = require('../utils/http');
 
-
+/*
+ * Extracts the bearer token and verifies it with the shared helper, which also enforces
+ * the `type` claim. Calling jwt.verify() directly here would accept a refresh token as
+ * an access token, because both are signed with the same secret.
+ */
 function authMiddleware(req, res, next) {
-    try {
-        const authHeader = req.headers.authorization;
+    const authHeader = req.headers.authorization;
 
-        if (!authHeader || !authHeader.startsWith('Bearer ')) {
-            return res.status(401).json({
-                message: 'Authorization header missing or malformed'
-            });
-        }
-
-        const token = authHeader.split(' ')[1];
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-        // Attach the user ID from the token to the request object for use in controllers
-        req.user = decoded.id;
-        console.log("Decoded user ID from token:", req.user);
-
-        next();
-    } catch (err) {
-        console.error('Authentication error:', err);
-        res.status(401).json({
-            message: 'Invalid or expired token'
-        }); 
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return next(new ApiError(401, 'Authorization header missing or malformed'));
     }
-    
-}
 
+    const token = authHeader.slice('Bearer '.length).trim();
+
+    if (!token) {
+        return next(new ApiError(401, 'Authorization header missing or malformed'));
+    }
+
+    let decoded;
+
+    try {
+        decoded = verifyAccessToken(token);
+    } catch (err) {
+        // The token itself is never logged — it is a credential.
+        return next(new ApiError(401, 'Invalid or expired token'));
+    }
+
+    // Scoped to this user's documents by every query, so a tampered id in the payload
+    // would only ever match another real user's rows, never a stranger's.
+    req.user = decoded.id;
+    req.tokenType = decoded.type;
+
+    return next();
+}
 
 module.exports = { authMiddleware };

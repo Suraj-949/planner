@@ -1,14 +1,9 @@
-const formatDateKey = (date) => {
-    const normalizedDate = new Date(date)
-    normalizedDate.setHours(0, 0, 0, 0)
+import { formatDateKey } from '../utils/dates'
 
-    const year = normalizedDate.getFullYear()
-    const month = String(normalizedDate.getMonth() + 1).padStart(2, '0')
-    const day = String(normalizedDate.getDate()).padStart(2, '0')
-
-    return `${year}-${month}-${day}`
-}
-
+/*
+ * Streak is derived from the shared day key rather than its own date maths, so a day
+ * boundary means the same thing here as it does in the reminder logic.
+ */
 const updateStreak = () => {
     const streak = Number(localStorage.getItem('streak')) || 0
     const lastCompletedDate = localStorage.getItem('lastCompletedDate')

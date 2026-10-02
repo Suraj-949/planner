@@ -1,234 +1,83 @@
 const Task = require('../models/task.model');
+const { asyncHandler, badRequest, notFound } = require('../utils/http');
+const { validateTaskPayload, isValidTaskId } = require('../utils/taskValidation');
+const { ok, created } = require('../utils/response');
 
+const createTask = asyncHandler(async (req, res) => {
+    const { value, errors } = validateTaskPayload(req.body);
 
-function validateStatus(status) {
-    const validStatuses = ['pending', 'in-progress', 'completed'];
-    
-    // If status is provided, check if it's one of the valid options. If not, return an error message. If status is not provided, we can allow it to be optional and default to 'pending' in the model.
-    if (status && !validStatuses.includes(status)) {
-        return 'Invalid status value'
-    }
-}
-
-function validateCategory(category) {
-    const validCategories = ['DSA', 'development', 'college', 'personal', 'work', 'other'];
-    
-    if (category && !validCategories.includes(category)) {
-        return 'Invalid category value'
-    }
-}
-
-function validatePriority(priority) {
-    const validPriorities = ['high', 'medium', 'low'];
-
-    if (priority && !validPriorities.includes(priority)) {
-        return 'Invalid priority value'
-    }
-}
-
-
-// This function validates the deadline input and ensures it's a valid date. It returns an error message if the format is invalid, or the parsed date if it's valid.
-function validateDeadline(deadline) {
-    const parsedDeadline = new Date(deadline);
-
-    if (isNaN(parsedDeadline.getTime())) {
-        return {
-            error: 'Invalid deadline format. Please provide a valid date.'
-        }
+    if (errors.length > 0) {
+        throw badRequest(errors[0], errors);
     }
 
-    return { value: parsedDeadline };
-}
+    // userId comes from the verified token, never from the body — otherwise any caller
+    // could create tasks against another account.
+    const task = await Task.create({ ...value, userId: req.user });
 
+    created(res, { message: 'Task created successfully', task });
+});
 
-async function createTask(req, res) {
-    try {
-        
-        const { title, description, status, deadline, category, priority } = req.body;
-        // Get the user ID from the authenticated request
-        const userId = req.user; 
+const getTasks = asyncHandler(async (req, res) => {
+    const filter = { userId: req.user };
 
-        console.log("header : ", req.headers)
-        
-        // Validate required fields
-        if (!title || !deadline ) {
-            return res.status(400).json({
-                message: 'Title and deadline are required'
-            });
-        }
+    // Optional filters, applied server-side so the client never has to fetch everything
+    // to narrow it down.
+    if (req.query.status) filter.status = req.query.status;
+    if (req.query.priority) filter.priority = req.query.priority;
+    if (req.query.category) filter.category = req.query.category;
 
-        // validate status
-        const statusError = validateStatus(status);
-        if (statusError) {
-            return res.status(400).json({
-                message: statusError
-            });
-        }
+    const tasks = await Task.find(filter).sort({ dateCreated: -1 });
 
-        const categoryError = validateCategory(category);
-        if (categoryError) {
-            return res.status(400).json({
-                message: categoryError
-            });
-        }
+    ok(res, 200, { message: 'Tasks fetched successfully', tasks });
+});
 
-        const priorityError = validatePriority(priority);
-        if (priorityError) {
-            return res.status(400).json({
-                message: priorityError
-            });
-        }
+const updateTask = asyncHandler(async (req, res) => {
+    const { id } = req.params;
 
-        // Validate deadline format
-        const deadlineResult = validateDeadline(deadline);
-        if (deadlineResult.error) {
-            return res.status(400).json({
-                message: deadlineResult.error
-            });
-        }
-
-        const taskData = { title, description, status, deadline: deadlineResult.value, userId, category, priority };
-
-        // Create a new task instance and save it to the database
-        const task = new Task( taskData );
-        await task.save()
-
-        res.status(201).json({
-            message: 'Task created successfully',
-            task: task
-        });
-
-    } catch(err) {
-        res.status(400).json({
-            message: 'Error creating task',
-            error: err
-        });
+    if (!isValidTaskId(id)) {
+        throw notFound('Task not found');
     }
 
-}
+    const { value, errors } = validateTaskPayload(req.body, { partial: true });
 
-
-
-
-
-async function getTasks(req, res) {
-    try {
-        const userId = req.user;
-        
-        // Fetch tasks from the database that belong to the authenticated user, sorted by creation date (newest first)
-        const tasks = await Task.find({ userId }).sort({ dateCreated: -1 });
-
-        res.status(200).json({
-            message: 'Tasks fetched successfully',
-            tasks
-        });
-    } catch (err) {
-        res.status(400).json({
-            message: 'Error fetching tasks',
-            error: err.message
-        });
+    if (errors.length > 0) {
+        throw badRequest(errors[0], errors);
     }
-}
 
-
-
-
-
-async function updateTask(req, res) {
-    
-    try {
-        const userID = req.user;
-        const taskId = req.params.id;
-        const { title, description, status, deadline, category, priority } = req.body;
-
-        if (!title || !deadline ) {
-            return res.status(400).json({
-                message: 'Title and deadline are required'
-            });
-        }
-
-        const statusError = validateStatus(status);
-        if (statusError) {
-            return res.status(400).json({
-                message: statusError
-            });
-        }
-
-        const categoryError = validateCategory(category);
-        if (categoryError) {
-            return res.status(400).json({
-                message: categoryError
-            });
-        }
-
-        const priorityError = validatePriority(priority);
-        if (priorityError) {
-            return res.status(400).json({
-                message: priorityError
-            });
-        }
-
-        const deadlineResult = validateDeadline(deadline);
-        if (deadlineResult.error) {
-            return res.status(400).json({
-                message: deadlineResult.error
-            });
-        }
-
-        const task = await Task.findOneAndUpdate(
-            { _id: taskId, userId: userID },
-            {
-                title,
-                description,
-                status,
-                deadline: deadlineResult.value,
-                category,
-                priority
-            },
-            { returnDocument: 'after' }
-        );
-
-        if (!task) {
-            return res.status(404).json({
-                message: 'Task not found'
-            });
-        }
-
-        res.status(200).json({
-            message: 'Task updated successfully',
-            task
-        });
-    } catch (err) {
-        res.status(400).json({
-            message: 'Error updating task',
-            error: err.message
-        });
+    if (Object.keys(value).length === 0) {
+        throw badRequest('No valid fields provided to update');
     }
-}
 
-async function deleteTask(req, res) {
-    try {
-        const userID = req.user;
-        const taskId = req.params.id;
+    // returnDocument was missing, so the *pre*-update document was sent back and the
+    // client rendered stale data. runValidators was also missing, which let an
+    // out-of-enum value be written straight to Mongo.
+    const task = await Task.findOneAndUpdate(
+        { _id: id, userId: req.user },
+        { $set: value },
+        { returnDocument: 'after', runValidators: true }
+    );
 
-        const task = await Task.findOneAndDelete({ _id: taskId, userId: userID });
-
-        if (!task) {
-            return res.status(404).json({
-                message: 'Task not found'
-            });
-        }
-
-        res.status(200).json({
-            message: 'Task deleted successfully',
-            task : task
-        });
-    } catch (err) {
-        res.status(400).json({
-            message: 'Error deleting task',
-            error: err.message
-        });
+    if (!task) {
+        throw notFound('Task not found');
     }
-}
+
+    ok(res, 200, { message: 'Task updated successfully', task });
+});
+
+const deleteTask = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+
+    if (!isValidTaskId(id)) {
+        throw notFound('Task not found');
+    }
+
+    const task = await Task.findOneAndDelete({ _id: id, userId: req.user });
+
+    if (!task) {
+        throw notFound('Task not found');
+    }
+
+    ok(res, 200, { message: 'Task deleted successfully', task });
+});
 
 module.exports = { createTask, getTasks, updateTask, deleteTask };

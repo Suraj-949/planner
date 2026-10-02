@@ -39,5 +39,15 @@ const taskSchema = new mongoose.Schema({
     }
 });
 
+/*
+ * getTasks() filters by userId and sorts by dateCreated desc. Without these the query
+ * scans and sorts the whole collection; the compound index covers both halves so the
+ * sort never spills to memory.
+ *
+ * `background: true` keeps index creation from blocking startup on a large collection.
+ */
+taskSchema.index({ userId: 1 }, { background: true });
+taskSchema.index({ userId: 1, dateCreated: -1 }, { background: true });
+
 module.exports = mongoose.model('Task', taskSchema);
 

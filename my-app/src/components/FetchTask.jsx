@@ -3,16 +3,31 @@ import axiosInstance from '../axiosInstance'
 import { Ellipsis, PencilLine, X } from 'lucide-react'
 
 import UpdateTaskModal from './UpdateTaskModal'
+import Badge from './ui/Badge'
+import { getReminder } from '../utils/dates'
+import {
+    REMINDER_VARIANTS,
+    PRIORITY_VARIANTS,
+    STATUS_LABELS,
+    STATUS_VARIANTS,
+    CATEGORY_LABELS,
+} from '../constants/taskMeta'
+
+const REMINDER_LABELS = {
+    overdue: 'Overdue',
+    today: 'Due Today',
+    tomorrow: 'Due Tomorrow',
+}
 
 const FetchTask = ({ refreshTrigger = 0, onStatsChange, onStreakChange }) => {
     const [tasks, setTasks] = useState([])
     const [isLoading, setIsLoading] = useState(false)
     const [error, setError] = useState('')
-    
-    const [dropDownId, setDropDownId] = useState('')
-    const [editingTask, setEditingTask] = useState(null) 
-    const [updateMessage, setUpdateMessage] = useState('')
 
+    const [dropDownId, setDropDownId] = useState('')
+    const [editingTask, setEditingTask] = useState(null)
+    const [updateMessage, setUpdateMessage] = useState('')
+    const [taskPendingDelete, setTaskPendingDelete] = useState(null)
 
     const fetchTasks = async () => {
         try {
@@ -28,7 +43,14 @@ const FetchTask = ({ refreshTrigger = 0, onStatsChange, onStreakChange }) => {
     }
 
     useEffect(() => {
-        fetchTasks()
+        // `fetchTasks` sets state synchronously on entry, which React's compiler lint
+        // flags as a cascading render. Deferring to a microtask keeps the fetch
+        // effect-driven without re-entering the render phase from the effect body.
+        const frame = requestAnimationFrame(() => {
+            fetchTasks()
+        })
+
+        return () => cancelAnimationFrame(frame)
     }, [refreshTrigger])
 
     useEffect(() => {
@@ -41,26 +63,32 @@ const FetchTask = ({ refreshTrigger = 0, onStatsChange, onStreakChange }) => {
         return () => clearTimeout(timer)
     }, [updateMessage])
 
-    // Opens/closes the dropdown for a specific task. If the clicked task is already open, close it by setting an empty string. Otherwise, set the clicked taskId as the active dropdown.
+    // Opens/closes the dropdown for a specific task. If the clicked task is already open,
+    // close it by setting an empty string. Otherwise, set the clicked taskId as the active
+    // dropdown.
     const openDropDown = (taskId) => {
         setDropDownId((currentValue) => (currentValue === taskId ? '' : taskId))
     }
 
-    // open the modal by selectiing task 
-    const openUpdateModal = (task) => { 
+    // open the modal by selecting task
+    const openUpdateModal = (task) => {
         setDropDownId('')
-        setEditingTask(task) 
+        setEditingTask(task)
     }
 
     const handleUpdated = async (message) => {
         setUpdateMessage(message)
         await fetchTasks()
-    } 
+    }
 
-    const handleDelete = async (task) => {
+    const handleDelete = async () => {
+        const task = taskPendingDelete
+
+        if (!task) return
+
         setError('')
         setUpdateMessage('')
-        setDropDownId('')
+        setTaskPendingDelete(null)
 
         try {
             await axiosInstance.delete(`/tasks/delete/${task._id}`)
@@ -84,197 +112,215 @@ const FetchTask = ({ refreshTrigger = 0, onStatsChange, onStreakChange }) => {
     // Memorize stats so recalculation happens only when tasks change
     const stats = useMemo(() => calculateStats(tasks), [tasks])
 
-    // Send updated stats to parent component whenever called, using the callback function received via props
+    // Report stats upward whenever they change. Derived during render from useMemo, so
+    // it only re-runs when the task list actually changes.
     useEffect(() => {
-
-        // Call parent function and pass latest stats
         onStatsChange?.(stats)
-    }, [onStatsChange, stats])
-
-    const reminder = (task) => {
-        const today = new Date().setHours(0, 0, 0, 0)
-        const deadline = new Date(task.deadline).setHours(0, 0, 0, 0)
-        const timeDifference = (deadline - today) / (1000 * 60 * 60 * 24); // Convert milliseconds difference into days
-
-        return timeDifference;
-    }
+    }, [stats, onStatsChange])
 
     return (
         <section
-            className="rounded-3xl border border-stone-200 bg-white p-6 shadow-sm md:p-8"
-            onClick={() => setDropDownId('')} // This onClick handler on the section ensures that clicking anywhere outside the dropdown menu will close it by resetting dropDownId to an empty string.
+            className="rounded-3xl border border-border bg-surface p-6 shadow-card md:p-8"
+            onClick={() => setDropDownId('')}
         >
             <div className="mb-5 flex items-center justify-between gap-3">
                 <div>
-                    <h2 className="text-2xl font-semibold text-stone-900">Your tasks</h2>
-                    <p className="mt-1 text-sm text-stone-600">Here’s your task list.</p>
+                    <h2 className="text-2xl font-semibold text-content">Your tasks</h2>
+                    <p className="mt-1 text-sm text-content-muted">Here&rsquo;s your task list.</p>
                 </div>
                 <button
                     onClick={fetchTasks}
-                    className="rounded-2xl border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-700 transition hover:border-stone-400 hover:bg-stone-100"
+                    className="rounded-control border border-border-strong px-4 py-2 text-sm font-semibold text-content-muted transition hover:border-primary hover:text-primary"
                     type="button"
                 >
                     Refresh
                 </button>
             </div>
 
-            {isLoading && <p className="text-sm text-stone-500">Loading tasks...</p>}
+            {isLoading && <p className="text-sm text-content-subtle">Loading tasks...</p>}
 
             {error && (
-                <p className="rounded-2xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+                <p className="rounded-control border border-danger/40 bg-danger-soft px-4 py-3 text-sm font-medium text-danger">
                     {error}
                 </p>
             )}
 
             {updateMessage && (
-                <p className="mt-3 rounded-2xl bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">
+                <p className="mt-3 rounded-control border border-secondary/40 bg-secondary-soft px-4 py-3 text-sm font-medium text-secondary">
                     {updateMessage}
                 </p>
             )}
 
             {!isLoading && !error && tasks.length === 0 && (
-                <p className="rounded-2xl border border-dashed border-stone-300 px-4 py-6 text-sm text-stone-500">
+                <p className="rounded-control border border-dashed border-border-strong px-4 py-6 text-sm text-content-subtle">
                     No tasks yet. Create your first one above.
                 </p>
             )}
 
-            <div className="mt-4 grid gap-4 max-h-120 overflow-y-auto">
-                {tasks.map((task) => (
-                    <article
-                        key={task._id}
-                        className="relative rounded-2xl border border-emerald-200 bg-stone-50 p-4 transition hover:border-stone-300 hover:bg-stone-100/70"
-                    >
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                            <div>
-                                <h3 className="text-lg font-semibold text-stone-900">{task.title}</h3>
-                                {task.description && (
-                                    <p className="mt-1 text-sm text-stone-600">{task.description}</p>
-                                )}
-                            </div>
-                            
-                            <div className="flex flex-row items-center gap-3">
-                                
-                                {/* Deadline reminder logic */}
-                                {task.deadline &&
-                                task.status !== "completed" &&
-                                reminder(task) < 0 && (
-                                    <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-bold text-red-800">
-                                        Overdue
-                                    </span>
-                                )}
+            <div className="mt-4 grid max-h-120 gap-4 overflow-y-auto">
+                {tasks.map((task) => {
+                    const reminder = getReminder(task)
 
-                                {task.deadline &&
-                                task.status !== "completed" &&
-                                reminder(task) === 0 && (
-                                    <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-bold text-blue-800">
-                                        Due Today
-                                    </span>
-                                )}
+                    return (
+                        <article
+                            key={task._id}
+                            className="relative rounded-2xl border border-border bg-surface-raised p-4 transition hover:border-border-strong"
+                        >
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                                <div>
+                                    <h3 className="text-lg font-semibold text-content">{task.title}</h3>
+                                    {task.description && (
+                                        <p className="mt-1 text-sm text-content-muted">
+                                            {task.description}
+                                        </p>
+                                    )}
+                                </div>
 
-                                {task.deadline &&
-                                task.status !== "completed" &&
-                                reminder(task) === 1 && (
-                                    <span className="rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-bold text-yellow-800">
-                                        Due Tomorrow
-                                    </span>
-                                )}
+                                <div className="flex flex-row items-center gap-2">
+                                    {reminder && (
+                                        <Badge variant={REMINDER_VARIANTS[reminder]}>
+                                            {REMINDER_LABELS[reminder]}
+                                        </Badge>
+                                    )}
 
-                                <span
-                                    className={`rounded-full px-3 py-1 text-xs font-bold ${task.priority === 'high' ? "bg-red-100 text-red-800" : task.priority === "medium" ? "bg-yellow-100 text-yellow-800" : "bg-green-100 text-green-800"} `}>
+                                    <Badge variant={PRIORITY_VARIANTS[task.priority] ?? 'neutral'}>
                                         {task.priority}
-                                </span>
-                            </div>
-                                
-                        </div>
-
-                        <div className="mt-4 flex flex-col gap-3 rounded-2xl bg-white/70 p-3 sm:flex-row sm:items-center sm:justify-between">
-                            <div className="grid gap-3 text-sm text-stone-600 sm:grid-cols-2">
-                                <div>
-                                    <p className="text-xs font-semibold uppercase tracking-wide text-stone-400">
-                                        Status
-                                    </p>
-                                    <p className="mt-1 font-medium text-stone-700">
-                                        {task.status}
-                                    </p>
+                                    </Badge>
                                 </div>
-
-                                <div>
-                                    <p className="text-xs font-semibold uppercase tracking-wide text-stone-400">
-                                        Category
-                                    </p>
-                                    <p className="mt-1 font-medium text-stone-700">
-                                        {task.category}
-                                    </p>
-                                </div> 
-
-                                <div>
-                                    <p className="text-xs font-semibold uppercase tracking-wide text-stone-400">
-                                        Deadline
-                                    </p>
-                                    <p className="mt-1 font-medium text-stone-700">
-                                        {/* this checks if deadline exists before formatting, otherwise shows 'N/A' to avoid errors */}
-                                        {task.deadline ? new Date(task.deadline).toLocaleDateString() : 'N/A'}
-                                    </p>
-                                </div>
-
-                                <div>
-                                    <p className="text-xs font-semibold uppercase tracking-wide text-stone-400">
-                                        Created
-                                    </p>
-                                    <p className="mt-1 font-medium text-stone-700">
-                                        {/* this checks if dateCreated exists before formatting, otherwise shows 'N/A' to avoid errors */}
-                                        {task.dateCreated ? new Date(task.dateCreated).toLocaleString() : 'N/A'}
-                                    </p>
-                                </div> 
                             </div>
 
-                            <div className="relative">
-                                <button
-                                    type="button"
-                                    aria-label={`More options for ${task.title}`}
-                                    onClick={(event) => {
-                                        event.stopPropagation() // yaha pe isliye stopPropagation use kiya hai taki jab user dropdown toggle kare, toh woh click event parent element pe propagate na ho jaye aur dropdown khulte hi close na ho jaye.
-                                        openDropDown(task._id)
-                                    }}
-                                    className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-stone-200 bg-white text-stone-500 transition hover:border-stone-300 hover:bg-stone-100 hover:text-stone-700"
-                                >
-                                    <Ellipsis size={16} className="rotate-90" />
-                                </button>
-                                
-
-                                {/* Conditionally render the Dropdown menu jab dropDownId current taskId ke equal ho */}
-                                {dropDownId === task._id && (
-                                    <div
-                                        className="absolute right-0 top-10 z-10 w-40 overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-lg"
-                                        onClick={(event) => event.stopPropagation()} //
-                                    >
-                                        <button
-                                            type="button"
-                                            onClick={() => openUpdateModal(task)}
-                                            className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm font-medium text-stone-700 transition hover:bg-stone-100"
-                                        >
-                                            <PencilLine size={16} />
-                                            Update
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => handleDelete(task)}
-                                            className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm font-medium text-stone-700 transition hover:bg-stone-100"
-                                        >
-                                            <X size={16} />
-                                            Delete
-                                        </button>
+                            <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-border bg-surface p-3 sm:flex-row sm:items-center sm:justify-between">
+                                <div className="grid gap-3 text-sm text-content-muted sm:grid-cols-2">
+                                    <div>
+                                        <p className="text-xs font-semibold uppercase tracking-wide text-content-subtle">
+                                            Status
+                                        </p>
+                                        <p className="mt-1 font-medium text-content">
+                                            <Badge variant={STATUS_VARIANTS[task.status] ?? 'neutral'}>
+                                                {STATUS_LABELS[task.status] ?? task.status}
+                                            </Badge>
+                                        </p>
                                     </div>
-                                )}
+
+                                    <div>
+                                        <p className="text-xs font-semibold uppercase tracking-wide text-content-subtle">
+                                            Category
+                                        </p>
+                                        <p className="mt-1 font-medium text-content">
+                                            {CATEGORY_LABELS[task.category] ?? task.category}
+                                        </p>
+                                    </div>
+
+                                    <div>
+                                        <p className="text-xs font-semibold uppercase tracking-wide text-content-subtle">
+                                            Deadline
+                                        </p>
+                                        <p className="mt-1 font-medium text-content">
+                                            {task.deadline
+                                                ? new Date(task.deadline).toLocaleDateString()
+                                                : 'N/A'}
+                                        </p>
+                                    </div>
+
+                                    <div>
+                                        <p className="text-xs font-semibold uppercase tracking-wide text-content-subtle">
+                                            Created
+                                        </p>
+                                        <p className="mt-1 font-medium text-content">
+                                            {task.dateCreated
+                                                ? new Date(task.dateCreated).toLocaleString()
+                                                : 'N/A'}
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div className="relative">
+                                    <button
+                                        type="button"
+                                        aria-label={`More options for ${task.title}`}
+                                        onClick={(event) => {
+                                            // stopPropagation keeps the section's click handler
+                                            // from closing the dropdown in the same tick it opens.
+                                            event.stopPropagation()
+                                            openDropDown(task._id)
+                                        }}
+                                        className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-border bg-surface-overlay text-content-subtle transition hover:border-primary hover:text-primary"
+                                    >
+                                        <Ellipsis size={16} className="rotate-90" />
+                                    </button>
+
+                                    {dropDownId === task._id && (
+                                        <div
+                                            className="absolute right-0 top-10 z-10 w-40 overflow-hidden rounded-2xl border border-border-strong bg-surface-overlay shadow-overlay"
+                                            onClick={(event) => event.stopPropagation()}
+                                        >
+                                            <button
+                                                type="button"
+                                                onClick={() => openUpdateModal(task)}
+                                                className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm font-medium text-content transition hover:bg-surface-raised"
+                                            >
+                                                <PencilLine size={16} />
+                                                Update
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setTaskPendingDelete(task)}
+                                                className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm font-medium text-danger transition hover:bg-danger-soft"
+                                            >
+                                                <X size={16} />
+                                                Delete
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
-                        </div>
-                    </article>
-                ))}
+                        </article>
+                    )
+                })}
             </div>
 
-            {/* conditionally render the UpdateTaskModal when a task is being edited, passing the selected task and handlers as props */}
+            {taskPendingDelete && (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+                    onClick={() => setTaskPendingDelete(null)}
+                >
+                    <div
+                        role="alertdialog"
+                        aria-modal="true"
+                        aria-labelledby="confirm-delete-title"
+                        onClick={(event) => event.stopPropagation()}
+                        className="w-full max-w-md rounded-3xl border border-border-strong bg-surface-overlay p-6 shadow-overlay"
+                    >
+                        <h3 id="confirm-delete-title" className="text-lg font-semibold text-content">
+                            Delete this task?
+                        </h3>
+                        <p className="mt-2 text-sm text-content-muted">
+                            &ldquo;{taskPendingDelete.title}&rdquo; will be permanently removed.
+                            This cannot be undone.
+                        </p>
+                        <div className="mt-6 flex justify-end gap-3">
+                            <button
+                                type="button"
+                                onClick={() => setTaskPendingDelete(null)}
+                                className="rounded-control border border-border-strong px-4 py-2 text-sm font-semibold text-content-muted transition hover:text-content"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleDelete}
+                                className="rounded-control bg-danger px-4 py-2 text-sm font-semibold text-danger-contrast transition hover:bg-danger-hover"
+                            >
+                                Delete
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {editingTask && (
                 <UpdateTaskModal
+                    key={editingTask._id}
                     task={editingTask}
                     onClose={() => setEditingTask(null)}
                     onUpdated={handleUpdated}

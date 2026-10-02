@@ -1,1 +1,123 @@
 @import "tailwindcss";
+
+/*
+ * Planner design tokens — dark only.
+ *
+ * Source of truth for the whole app. Components use semantic names
+ * (bg-surface, text-content-muted, border-border) and never a raw hex value,
+ * so retheming is a change to this file alone.
+ */
+
+@theme {
+    /* ---- Accents -------------------------------------------------------- */
+    --color-primary: #ff7a00;
+    --color-primary-hover: #ea7200;
+    --color-primary-active: #d16800;
+    --color-primary-soft: #ff7a001f;
+    --color-primary-border: #4a2c0d;
+    --color-primary-contrast: #171717;
+
+    /* HIGH priority badge — warm orange/brown, softer than the accent fill */
+    --color-high-soft: #3d2410;
+    --color-high-text: #f5923c;
+
+    /* MEDIUM priority badge — muted brown/grey */
+    --color-medium-soft: #2e2820;
+    --color-medium-text: #b08968;
+
+    /* LOW priority badge — dark grey */
+    --color-low-soft: #242424;
+    --color-low-text: #8a8a8a;
+
+    --color-secondary: #22c55e;
+    --color-secondary-hover: #1ca350;
+    --color-secondary-soft: #22c55e1a;
+    --color-secondary-border: #14532d;
+    --color-secondary-contrast: #171717;
+
+    --color-danger: #ef4444;
+    --color-danger-hover: #dc2626;
+    --color-danger-soft: #ef44441f;
+    --color-danger-border: #5c1f1f;
+    --color-danger-contrast: #ffffff;
+
+    /* ---- Surfaces -------------------------------------------------------- */
+    --color-background: #171717;
+    --color-sidebar: #131313;
+    --color-surface: #1f1f1f;
+    --color-surface-raised: #202020;
+    --color-surface-overlay: #262626;
+    --color-surface-input: #111111;
+
+    /* ---- Borders --------------------------------------------------------- */
+    --color-border: #2a2a2a;
+    --color-border-strong: #3a3a3a;
+    --color-border-focus: #ff7a00;
+
+    /* ---- Content --------------------------------------------------------- */
+    --color-content: #f5f5f5;
+    --color-content-muted: #a3a3a3;
+    --color-content-subtle: #737373;
+    --color-content-inverse: #171717;
+
+    /* ---- Typography ------------------------------------------------------ */
+    --font-sans: "Inter", "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-mono: ui-monospace, "SFMono-Regular", "Cascadia Code", monospace;
+
+    /* ---- Shape — restrained, 4–8px -------------------------------------- */
+    --radius-control: 6px;
+    --radius-card: 8px;
+    --radius-panel: 10px;
+    --radius-pill: 9999px;
+}
+
+@layer base {
+    html {
+        color-scheme: dark;
+    }
+
+    body {
+        background-color: var(--color-background);
+        color: var(--color-content);
+        font-family: var(--font-sans);
+        font-size: 14px;
+        -webkit-font-smoothing: antialiased;
+    }
+
+    :where(a, button, input, select, textarea, [tabindex]):focus-visible {
+        outline: 2px solid var(--color-border-focus);
+        outline-offset: 1px;
+    }
+
+    ::placeholder {
+        color: var(--color-content-subtle);
+        opacity: 1;
+    }
+
+    * {
+        scrollbar-width: thin;
+        scrollbar-color: var(--color-border-strong) transparent;
+    }
+
+    /* Native select/dropdown popups inherit the dark scheme. */
+    select option {
+        background-color: var(--color-surface-overlay);
+        color: var(--color-content);
+    }
+
+    /* The date input's calendar glyph is black-on-dark by default. */
+    input[type="date"]::-webkit-calendar-picker-indicator {
+        filter: invert(0.6);
+        cursor: pointer;
+    }
+}
+
+@layer utilities {
+    .label-xs {
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--color-content-subtle);
+    }
+}

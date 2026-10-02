@@ -1,179 +1,185 @@
-const userModel = require('../models/user.model');
-const jwt = require('jsonwebtoken');
+﻿const userModel = require('../models/user.model');
 const bcrypt = require('bcrypt');
+const {
+    signAccessToken,
+    signRefreshToken,
+    verifyRefreshToken,
+    setRefreshCookie,
+    clearRefreshCookie,
+} = require('../utils/tokens');
+const { logger } = require('../utils/logger');
+const { ok, created } = require('../utils/response');
 
-function createAccessToken(userId) {
-    return jwt.sign({ id: userId }, process.env.JWT_SECRET, { expiresIn: '15m' });
+const BCRYPT_SALT_ROUNDS = 10;
+const MIN_PASSWORD_LENGTH = 8;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Login failures return one identical message for "no such user" and "wrong password" so
+// the endpoint cannot be used to enumerate which accounts exist.
+const INVALID_CREDENTIALS = 'Invalid credentials';
+
+function validateRegistrationFields({ username, email, password }) {
+    if (!username || !email || !password) {
+        return 'Username, email and password are required';
+    }
+
+    if (typeof username !== 'string' || typeof email !== 'string' || typeof password !== 'string') {
+        return 'Username, email and password must be strings';
+    }
+
+    if (!username.trim()) {
+        return 'Username cannot be empty';
+    }
+
+    if (!EMAIL_PATTERN.test(email.trim())) {
+        return 'Invalid email format';
+    }
+
+    if (password.length < MIN_PASSWORD_LENGTH) {
+        return `Password must be at least ${MIN_PASSWORD_LENGTH} characters`;
+    }
+
+    return null;
 }
 
-function createRefreshToken(userId) {
-    return jwt.sign({ id: userId }, process.env.JWT_SECRET, { expiresIn: '7d' });
+function issueSession(res, user, statusCode, message) {
+    const accessToken = signAccessToken(user._id);
+    const refreshToken = signRefreshToken(user._id);
+
+    setRefreshCookie(res, refreshToken);
+
+    const body = {
+        message,
+        user: {
+            username: user.username,
+            email: user.email,
+        },
+        accessToken,
+    };
+
+    if (statusCode === 201) {
+        return created(res, body);
+    }
+
+    return ok(res, statusCode, body);
 }
-
-function hashPassword(password) {
-    return bcrypt.hash(password, 10);
-}
-
-function setRefreshCookie(res, refreshToken) {
-    const isProduction = process.env.NODE_ENV === 'production';
-
-    // Local development uses http://localhost, so the cookie must stay non-secure there.
-    
-    // save the refresh token in an httpOnly cookie with appropriate security settings based on the environment
-    res.cookie('refreshToken', refreshToken, {    
-        httpOnly: true,
-        secure: isProduction,
-        sameSite: isProduction ? 'none' : 'lax',  // In production, we need 'none' to allow cross-site cookies. In development, 'lax' is sufficient and more secure.
-        maxAge: 7 * 24 * 60 * 60 * 1000
-    });
-}
-
-
-
-
 
 async function register(req, res) {
     try {
         const { username, email, password } = req.body;
 
-        const isUsernameExists = await userModel.findOne({ username });
-        const isEmailExists = await userModel.findOne({ email });
-
-        if (isUsernameExists) {
-            return res.status(400).json({
-                message: 'Username already exists'
-            });
+        const validationError = validateRegistrationFields({ username, email, password });
+        if (validationError) {
+            return res.status(400).json({ ok: false, message: validationError });
         }
 
-        if (isEmailExists) {
-            return res.status(400).json({
-                message: 'Email already exists'
-            });
+        const normalisedUsername = username.trim();
+        const normalisedEmail = email.trim().toLowerCase();
+
+        const existingUser = await userModel.findOne({
+            $or: [{ username: normalisedUsername }, { email: normalisedEmail }],
+        });
+
+        if (existingUser) {
+            const field = existingUser.email === normalisedEmail ? 'email' : 'username';
+
+            return res.status(400).json({ ok: false, message: `An account with this ${field} already exists` });
         }
-        
-        // Hash the password before saving the user to the database
-        const hashedPassword = await hashPassword(password);
-        const user = new userModel({ username, email, password: hashedPassword });
+
+        const hashedPassword = await bcrypt.hash(password, BCRYPT_SALT_ROUNDS);
+        const user = new userModel({
+            username: normalisedUsername,
+            email: normalisedEmail,
+            password: hashedPassword,
+        });
+
         await user.save();
 
-        const accessToken = createAccessToken(user._id);
-        const refreshToken = createRefreshToken(user._id);
-
-        // The refresh token lives in an httpOnly cookie so the browser can refresh access safely.
-        setRefreshCookie(res, refreshToken);
-
-        res.status(201).json({
-            message: 'User registered successfully',
-            user: {
-                username: user.username,
-                email: user.email
-            },
-            accessToken : accessToken
-        });
+        return issueSession(res, user, 201, 'User registered successfully');
     } catch (err) {
-        console.error('Register error:', err.message);
-        res.status(500).json({
-            message: 'Registration failed',
-            error: err.message
-        });
+        // A concurrent request can still win the race and trip the unique index.
+        if (err.code === 11000) {
+            return res.status(400).json({ ok: false, message: 'Username or email already exists' });
+        }
+
+        logger.error('Register error', { error: err.message });
+        return res.status(500).json({ ok: false, message: 'Registration failed' });
     }
 }
-
-
-
-
-
 
 async function login(req, res) {
     try {
         const { username, password } = req.body;
 
         if (!username || !password) {
-            return res.status(400).json({
-                message: 'Username or email and password are required'
-            });
+            return res.status(400).json({ ok: false, message: 'Username or email and password are required' });
         }
 
-        // Allow users to sign in with either their username or their email.
-        const user = await userModel.findOne({
-            $or: [{ username }, { email: username }]
-        });
+        if (typeof username !== 'string' || typeof password !== 'string') {
+            return res.status(400).json({ ok: false, message: 'Username or email and password are required' });
+        }
+
+        const identifier = username.trim();
+
+        // The password field is select:false on the schema, so the hash has to be
+        // requested explicitly for the bcrypt comparison to be possible.
+        const user = await userModel
+            .findOne({
+                $or: [{ username: identifier }, { email: identifier.toLowerCase() }],
+            })
+            .select('+password');
 
         if (!user) {
-            return res.status(404).json({
-                message: 'User not found'
-            });
+            return res.status(401).json({ ok: false, message: INVALID_CREDENTIALS });
         }
 
         const isMatch = await bcrypt.compare(password, user.password);
 
         if (!isMatch) {
-            return res.status(401).json({
-                message: 'Invalid credentials'
-            });
+            return res.status(401).json({ ok: false, message: INVALID_CREDENTIALS });
         }
 
-        // Generate tokens
-        const accessToken = createAccessToken(user._id);
-        const refreshToken = createRefreshToken(user._id);
-
-        // set refresh token in cookie
-        setRefreshCookie(res, refreshToken);
-
-        res.status(200).json({
-            message: 'Login successful',
-            user: {
-                username: user.username,
-                email: user.email
-            },
-            accessToken : accessToken
-        });
+        return issueSession(res, user, 200, 'Login successful');
     } catch (err) {
-        console.error('Login error:', err.message);
-        res.status(500).json({
-            message: 'Login failed',
-            error: err.message
-        });
+        logger.error('Login error', { error: err.message });
+        return res.status(500).json({ ok: false, message: 'Login failed' });
     }
 }
 
-
-
-
-
-
 async function refreshToken(req, res) {
-    const refreshToken = req.cookies.refreshToken;
+    const existingToken = req.cookies?.refreshToken;
 
-    if (!refreshToken) {
-        return res.status(401).json({
-            message: 'Refresh token not found'
-        });
+    if (!existingToken) {
+        return res.status(401).json({ ok: false, message: 'Refresh token not found' });
     }
 
     try {
-        const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET);
+        const decoded = verifyRefreshToken(existingToken);
         const user = await userModel.findById(decoded.id);
 
         if (!user) {
-            return res.status(404).json({
-                message: 'User not found'
-            });
+            clearRefreshCookie(res);
+            return res.status(401).json({ ok: false, message: 'Refresh token is no longer valid' });
         }
 
-        const accessToken = createAccessToken(user._id);
-
-        res.status(200).json({
+        return ok(res, 200, {
             message: 'Access token refreshed successfully',
-            accessToken : accessToken
+            accessToken: signAccessToken(user._id),
         });
     } catch (err) {
-        console.error('Refresh token error:', err.message);
-        res.status(401).json({
-            message: 'Failed to refresh token',
-            error: err.message
-        });
+        clearRefreshCookie(res);
+        logger.error('Refresh token error', { error: err.message });
+
+        return res.status(401).json({ ok: false, message: 'Failed to refresh token' });
     }
 }
 
-module.exports = { register, login, refreshToken };
+// Clearing the cookie is the server-side half of logout. It cannot invalidate access
+// tokens that were already issued, so the client must also drop its stored copy.
+function logout(req, res) {
+    clearRefreshCookie(res);
+
+    ok(res, 200, { message: 'Logged out successfully' });
+}
+
+module.exports = { register, login, refreshToken, logout };
