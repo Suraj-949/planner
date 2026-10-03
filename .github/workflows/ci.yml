@@ -17,11 +17,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          # Must stay in step with backend/Dockerfile (node:22). A glob passed to
+          # `node --test` is only expanded on Node >= 21, and Node 20 is EOL, so a
+          # mismatch here fails the run without any hint of a version problem.
+          node-version: 22
           cache: npm
 
       # Uses the root lockfile, which npm workspaces requires to be in sync with
@@ -61,7 +64,7 @@ jobs:
           --health-retries 5
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # Proves the Dockerfile in the repo is the one that builds, so a broken
       # image can never reach a deploy unnoticed.
