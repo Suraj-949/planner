@@ -1,20 +1,30 @@
 const { isValidObjectId } = require('mongoose');
 const { badRequest } = require('./http');
+const {
+    TASK_STATUSES,
+    TASK_CATEGORIES,
+    TASK_PRIORITIES,
+    TASK_CONTEXTS,
+    RECURRENCE_FREQUENCIES,
+    RECURRENCE_WEEKDAYS,
+    MAX_TITLE_LENGTH,
+    MAX_DESCRIPTION_LENGTH,
+    MAX_SUBTASK_TITLE_LENGTH,
+    MAX_ESTIMATE_MINUTES,
+    MAX_ACTUAL_MINUTES,
+    MAX_TAG_COUNT,
+    MAX_TAG_LENGTH,
+    MAX_SUBTASK_COUNT,
+    MAX_NOTES_LENGTH,
+    MAX_RECURRENCE_INTERVAL,
+} = require('../constants');
 
-const VALID_STATUSES = ['pending', 'in-progress', 'completed'];
-const VALID_CATEGORIES = ['DSA', 'development', 'college', 'personal', 'work', 'other'];
-const VALID_PRIORITIES = ['high', 'medium', 'low'];
-const VALID_CONTEXTS = ['Planner Core', 'Obsidian UI', 'Strategy 2025', 'Infrastructure'];
-
-const MAX_TITLE_LENGTH = 200;
-const MAX_DESCRIPTION_LENGTH = 5000;
-
-// A single task estimated beyond a day is data-entry error, not a real plan.
-const MAX_ESTIMATE_MINUTES = 1440;
-const MAX_TAG_COUNT = 20;
-const MAX_TAG_LENGTH = 50;
-const MAX_SUBTASK_COUNT = 50;
-const MAX_SUBTASK_TITLE_LENGTH = 200;
+// Aliases kept for the existing import sites. The values now live in src/constants, so
+// the schema and this validator cannot drift; the old names stay as the public surface.
+const VALID_STATUSES = TASK_STATUSES;
+const VALID_CATEGORIES = TASK_CATEGORIES;
+const VALID_PRIORITIES = TASK_PRIORITIES;
+const VALID_CONTEXTS = TASK_CONTEXTS;
 
 /*
  * A calendar date arrives from the client as "YYYY-MM-DD". `new Date(value)` parses that
@@ -66,6 +76,104 @@ function normaliseDeadline(deadline) {
     }
 
     return withTime;
+}
+
+/*
+ * Durations are whole minutes. A raw `<input type="number">` can emit "45.5", and a
+ * number that cannot be summed exactly is not a duration.
+ *
+ * Returns `{ value }`, `{ cleared: true }` for an explicit null, or `{ errors }`. `null`
+ * clears the field; an absent key never reaches here, so a partial update leaves the
+ * stored value alone.
+ */
+function normaliseMinutes(raw, { field, max }) {
+    // `Number('')` is 0, so a blank field would otherwise be stored as a real zero.
+    const isBlank = typeof raw !== 'number' && String(raw).trim() === '';
+
+    if (raw === null) return { cleared: true };
+
+    if (isBlank || typeof raw === 'boolean') {
+        return { errors: [`${field} must be a whole number of minutes`] };
+    }
+
+    const minutes = Number(raw);
+
+    if (!Number.isInteger(minutes)) {
+        return { errors: [`${field} must be a whole number of minutes`] };
+    }
+
+    if (minutes < 0 || minutes > max) {
+        return { errors: [`${field} must be between 0 and ${max} minutes`] };
+    }
+
+    return { value: minutes };
+}
+
+/*
+ * A link to another document. `null` and the empty string both clear it — a form that
+ * submits "" for "no selection" is normal, and rejecting it would make un-filing a task
+ * impossible from the UI.
+ */
+function normaliseRef(raw, field) {
+    if (raw === null || raw === '') return { cleared: true };
+
+    if (!isValidObjectId(raw)) {
+        return { errors: [`${field} must be a valid id`] };
+    }
+
+    return { value: String(raw) };
+}
+
+/*
+ * Normalises a recurrence rule, keeping only the keys that apply to its frequency.
+ *
+ * A day list on a non-weekly rule is rejected rather than kept: the scheduler would never
+ * read it, so storing it would leave the document asserting something false.
+ */
+function normaliseRecurrence(raw) {
+    if (raw === null) return { cleared: true };
+
+    if (typeof raw !== 'object' || Array.isArray(raw)) {
+        return { errors: ['Recurrence must be an object'] };
+    }
+
+    const { freq, interval, daysOfWeek } = raw;
+    const errors = [];
+
+    if (!RECURRENCE_FREQUENCIES.includes(freq)) {
+        errors.push(`Recurrence frequency must be one of: ${RECURRENCE_FREQUENCIES.join(', ')}`);
+    }
+
+    // Absent means every 1 period, which is also the schema default.
+    const step = interval === undefined || interval === null ? 1 : Number(interval);
+
+    if (!Number.isInteger(step) || step < 1 || step > MAX_RECURRENCE_INTERVAL) {
+        errors.push(`Recurrence interval must be a whole number between 1 and ${MAX_RECURRENCE_INTERVAL}`);
+    }
+
+    let days;
+
+    if (freq === 'weekly') {
+        if (!Array.isArray(daysOfWeek) || daysOfWeek.length === 0) {
+            errors.push('A weekly recurrence must list at least one day');
+        } else if (daysOfWeek.some((day) => !RECURRENCE_WEEKDAYS.includes(day))) {
+            errors.push('Recurrence days must be numbers from 0 to 6, where 0 is Sunday');
+        } else {
+            // De-duplicated and sorted so "every Mon, Wed" and "every Wed, Mon, Mon" are
+            // stored identically and compare equal.
+            days = [...new Set(daysOfWeek)].sort((a, b) => a - b);
+        }
+    } else if (daysOfWeek !== undefined && daysOfWeek !== null) {
+        errors.push('Only a weekly recurrence can specify daysOfWeek');
+    }
+
+    if (errors.length) return { errors };
+
+    const value = { freq, interval: step };
+
+    if (days) value.daysOfWeek = days;
+
+    return { value };
 }
 
 /*
@@ -148,23 +256,13 @@ function validateTaskPayload(body, { partial = false } = {}) {
      * can produce.
      */
     if (has('estimateMinutes')) {
-        const raw = body.estimateMinutes;
+        const result = normaliseMinutes(body.estimateMinutes, {
+            field: 'Estimate',
+            max: MAX_ESTIMATE_MINUTES,
+        });
 
-        if (raw === null) {
-            value.estimateMinutes = undefined;
-        } else if (String(raw).trim() === '') {
-            errors.push('Estimate must be a whole number of minutes');
-        } else {
-            const minutes = Number(raw);
-
-            if (!Number.isInteger(minutes)) {
-                errors.push('Estimate must be a whole number of minutes');
-            } else if (minutes < 0 || minutes > MAX_ESTIMATE_MINUTES) {
-                errors.push(`Estimate must be between 0 and ${MAX_ESTIMATE_MINUTES} minutes`);
-            } else {
-                value.estimateMinutes = minutes;
-            }
-        }
+        if (result.errors) errors.push(...result.errors);
+        else value.estimateMinutes = result.cleared ? undefined : result.value;
     }
 
     /*
@@ -242,6 +340,53 @@ function validateTaskPayload(body, { partial = false } = {}) {
         }
     }
 
+    /*
+     * Hierarchy links. Both are checked for shape here; whether the referenced document
+     * exists, and belongs to the same user, is the service layer's problem — a validator
+     * that queried the database would turn every create into three round trips.
+     */
+    for (const field of ['projectId', 'goalId']) {
+        if (!has(field)) continue;
+
+        const label = field === 'projectId' ? 'Project' : 'Goal';
+        const result = normaliseRef(body[field], label);
+
+        if (result.errors) errors.push(...result.errors);
+        else value[field] = result.cleared ? undefined : result.value;
+    }
+
+    if (has('recurrence')) {
+        const result = normaliseRecurrence(body.recurrence);
+
+        if (result.errors) errors.push(...result.errors);
+        else value.recurrence = result.cleared ? undefined : result.value;
+    }
+
+    /*
+     * Logged time, against the estimate above. Same rules and the same helper, so the two
+     * can never disagree about what a valid duration is — only the ceiling differs, because
+     * actual time accumulates across sessions while an estimate describes one sitting.
+     */
+    if (has('actualMinutes')) {
+        const result = normaliseMinutes(body.actualMinutes, {
+            field: 'Actual',
+            max: MAX_ACTUAL_MINUTES,
+        });
+
+        if (result.errors) errors.push(...result.errors);
+        else value.actualMinutes = result.cleared ? undefined : result.value;
+    }
+
+    if (has('notes')) {
+        const notes = body.notes === null ? undefined : String(body.notes).trim();
+
+        if (notes && notes.length > MAX_NOTES_LENGTH) {
+            errors.push(`Notes must be at most ${MAX_NOTES_LENGTH} characters`);
+        } else {
+            value.notes = notes;
+        }
+    }
+
     // On create a missing deadline is an error; on update an omitted one means
     // "unchanged". `has()` alone covered neither, because a create with no deadline
     // never entered this branch at all.
@@ -270,6 +415,10 @@ module.exports = {
     VALID_PRIORITIES,
     VALID_CONTEXTS,
     MAX_ESTIMATE_MINUTES,
+    MAX_ACTUAL_MINUTES,
+    MAX_NOTES_LENGTH,
+    MAX_RECURRENCE_INTERVAL,
+    RECURRENCE_FREQUENCIES,
     MAX_TAG_COUNT,
     MAX_TAG_LENGTH,
     MAX_SUBTASK_COUNT,

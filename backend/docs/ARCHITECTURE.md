@@ -54,7 +54,16 @@ backend/
     │   ├── rateLimit.middleware.js   # auth + API limits
     │   ├── csrf.middleware.js        # origin check on cookie requests
     │   └── requestId.middleware.js   # request correlation
+    ├── constants/
+    │   └── index.js               # shared enums + length/range limits
     ├── models/
+    │   ├── user.model.js          # tenancy, refresh tokens
+    │   ├── task.model.js          # tasks + embedded subtasks & recurrence
+    │   ├── goal.model.js          # goals; progress is derived, never stored
+    │   ├── milestone.model.js     # goal steps; reaches owner via goalId
+    │   ├── project.model.js       # projects, optional goal + archive timestamp
+    │   ├── habit.model.js         # cadence + target-per-period
+    │   └── habitCompletion.model.js  # one row per habit per day
     ├── controllers/
     ├── routes/
     └── utils/
@@ -64,6 +73,11 @@ backend/
         ├── response.js           # response envelope
         └── logger.js             # structured, redacting JSON logger
 ```
+
+**`constants/index.js` exists so the enum is defined once.** Until Phase 2.1 the task enums
+were written out in both `task.model.js` and `taskValidation.js`, and the two copies were
+free to disagree. Both import the module now, and `tests/phase2Models.test.js` asserts the
+schema's enums *are* the shared arrays.
 
 ---
 
@@ -215,12 +229,22 @@ untouched and non-browser API clients keep working. Full rationale is in R-CSRF-
 
 - **Ownership scoping** — every query filters on `req.user`; no endpoint accepts a user id
   from the client.
-- **Derived over stored** — anything computable is computed on read.
+- **Derived over stored** — anything computable is computed on read. A Goal therefore has no
+  `progress` field at all, and a Habit stores completion rows rather than a streak counter.
 - **Index what you query** — `tasks.userId`, and the compound `{ userId, dateCreated }` that
-  backs the list sort.
+  backs the list sort. Phase 2.1 adds `{ userId, context }`, `{ userId, tags }`,
+  `{ userId, projectId }` and `{ userId, goalId }` for the dashboard filters.
+- **Tenancy in one place per document** — `userId` is on Goal, Project and HabitCompletion;
+  Milestone has none and reaches its owner through `goalId`. A second copy is a second thing
+  to keep in step.
 - **Dates are stored as UTC `Date`.** Deadlines arrive as `YYYY-MM-DD` and are anchored at
   **local noon** on write so no timezone conversion can move the calendar date.
-- **Enums are validated centrally** in `taskValidation.js` and declared in `task.model.js`.
+- **Enums are validated centrally** in `taskValidation.js` and declared in `task.model.js`,
+  and both now import the values from `constants/index.js` so the two layers cannot drift.
+- **A unique index carries the invariant it names.** `{ habitId, date }` is unique: a habit
+  ticked twice in one day would otherwise store two rows and inflate its own streak.
+- **Coercion belongs in the validator, not the schema.** `HabitCompletion.date` is a plain
+  `Date` in the model; anchoring to local noon is `taskValidation`'s job.
 
 ---
 
@@ -267,16 +291,17 @@ the same way. Deduplicating that into one module is a reasonable Phase 2 cleanup
 
 ## 10. Testing
 
-`npm test` runs `node --test "tests/**/*.test.js"`. 59 tests, no framework dependency —
+`npm test` runs `node --test "tests/**/*.test.js"`. 109 tests, no framework dependency —
 Node's built-in runner is the only harness.
 
 | File | Tests | Scope |
 |---|---|---|
-| `tests/taskValidation.test.js` | 21 | Required fields, enums, empty-string enums, trimming, unknown fields, `context`/`estimateMinutes`/`tags`/`subtasks` rules, local-noon anchoring, a 10-timezone rendering matrix |
-| `tests/tokens.test.js` | 9 | Signing, expiry, wrong-secret rejection, tampered payload, type separation, access/refresh lifetime ordering |
-| `tests/auth.middleware.test.js` | 11 | Missing, malformed, non-Bearer, wrong-type, expired, RFC 7235 case-insensitive scheme, no credential leakage |
-| `tests/csrf.test.js` | 8 | Origin and Referer allow/deny, cookie scoping, safe methods, non-browser clients |
+| `tests/taskValidation.test.js` | 31 | Required fields, enums, empty-string enums, trimming, unknown fields, `context`/`estimateMinutes`/`tags`/`subtasks` rules, local-noon anchoring, a 10-timezone rendering matrix, plus `recurrence`/`projectId`/`goalId`/`actualMinutes`/`notes` |
+| `tests/phase2Models.test.js` | 25 | Schema contracts for Goal, Milestone, Project, Habit and HabitCompletion; index declarations; the derive-never-store and single-source-of-enums invariants |
 | `tests/task.controller.test.js` | 25 | CRUD against a real database, per-user isolation, update-returns-post-image, envelope shape, default values, dashboard-field round-trip, `$unset` clearing |
+| `tests/auth.middleware.test.js` | 11 | Missing, malformed, non-Bearer, wrong-type, expired, RFC 7235 case-insensitive scheme, no credential leakage |
+| `tests/tokens.test.js` | 9 | Signing, expiry, wrong-secret rejection, tampered payload, type separation, access/refresh lifetime ordering |
+| `tests/csrf.test.js` | 8 | Origin and Referer allow/deny, cookie scoping, safe methods, non-browser clients |
 
 Controllers run against `mongodb-memory-server`, so the suite needs no external database
 and never touches development data.
@@ -304,7 +329,9 @@ value before Mongo is reached. Mutation testing confirms removing the option is 
 It is kept as defence in depth — the moment a field is added to the schema without a
 matching validator rule, it becomes the only thing stopping a corrupt write. The schema
 now mirrors the validator's `maxlength` limits so the two layers agree, and
-`the schema enforces the same title limit as the validator` guards that.
+`the schema enforces the same title limit as the validator` guards that. Since 2.1 both
+layers import the same `constants/index.js`, so `task schema reads its enums from the shared
+module` fails the suite the moment a hand-written copy reappears.
 
 Deliberately not covered: authentication flows against a live database, the refresh-token
 rotation path, and the rate limiters. Those are Phase 2.

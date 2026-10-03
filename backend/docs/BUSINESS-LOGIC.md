@@ -139,19 +139,87 @@ existed, invalid statuses could reach the database and vanish from every aggrega
 
 ---
 
-## 7. ⬜ Phase 2 Rules
+## 7. Phase 2 Rules
 
 Introduced with their respective models. Recorded here so the rules are decided before the
 code forces decisions.
 
-| Rule | Domain | Statement |
+| Rule | Domain | Statement | Schema | Behaviour |
+|---|---|---|---|---|
+| R-RECUR-1 | Recurring tasks | Completing a recurring task creates the next occurrence with an advanced deadline | ✅ 2.1 | ⬜ 2.2 |
+| R-RECUR-2 | Recurring tasks | Missed occurrences collapse into one instance, never a backlog of stale duplicates | ✅ 2.1 | ⬜ 2.2 |
+| R-SUB-1 | Subtasks | A task is `completed` only when its subtasks are all complete, unless explicitly overridden | ✅ 2.1 | ⬜ 2.2 |
+| R-HAB-1 | Habits | A habit's streak counts consecutive *scheduled* occurrences met, not consecutive calendar days | ✅ 2.1 | ⬜ 2.2 |
+| R-HAB-2 | Habits | A habit with cadence "3× per week" is not broken by a missed Monday | ✅ 2.1 | ⬜ 2.2 |
+| R-FOCUS-10 | Focus | A focus session with no task link still counts toward total time but not toward task effort | ⬜ later | ⬜ later |
+| R-RANK-1 | Scoring ⬜ | Rank is 1 + count of strictly higher scores. Ties share a rank | ⬜ later | ⬜ later |
+| R-GOAL-1 | Goals | A goal's progress is the percentage of its milestones completed, not its tasks | ✅ 2.1 | ⬜ 2.2 |
+| R-ENTITLE-1 | Billing ⬜ | Plan limits are enforced server-side. The client hides features but never gates them | ⬜ later | ⬜ later |
+
+**"Schema" means the storage exists and is enforced by the database. It does not mean the
+rule runs.** Module 2.1 added the collections and the validators; the services that advance
+a recurrence, count a streak and derive a goal's progress arrive in 2.2. Every rule above
+therefore still needs its 2.2 half before it can be called working.
+
+---
+
+## 8. Data Model — Phase 2 Storage
+
+What 2.1 put in the database, and the reasoning behind the shapes that are not obvious.
+
+### Shared enums
+
+`src/constants/index.js` is now the single definition of `TASK_STATUSES`,
+`TASK_CATEGORIES`, `TASK_PRIORITIES`, `TASK_CONTEXTS`, `GOAL_STATUSES`,
+`RECURRENCE_FREQUENCIES` and `HABIT_CADENCES`, plus the length and range limits.
+
+Before this the same four task enums were written out in the schema *and* the validator.
+That duplication is why `runValidators` felt unreliable: the two copies could disagree, and
+nothing failed until a document reached the database. Both now import the module, and
+`tests/phase2Models.test.js` asserts the schema's enums are literally the shared arrays,
+so a hand-written copy reintroduced anywhere fails the suite.
+
+### Task additions
+
+| Field | Shape | Why |
 |---|---|---|
-| R-RECUR-1 | Recurring tasks | Completing a recurring task creates the next occurrence with an advanced deadline |
-| R-RECUR-2 | Recurring tasks | Missed occurrences collapse into one instance, never a backlog of stale duplicates |
-| R-SUB-1 | Subtasks | A task is `completed` only when its subtasks are all complete, unless explicitly overridden |
-| R-HAB-1 | Habits | A habit's streak counts consecutive *scheduled* occurrences met, not consecutive calendar days |
-| R-HAB-2 | Habits | A habit with cadence "3× per week" is not broken by a missed Monday |
-| R-FOCUS-10 | Focus | A focus session with no task link still counts toward total time but not toward task effort |
-| R-RANK-1 | Scoring ⬜ | Rank is 1 + count of strictly higher scores. Ties share a rank |
-| R-GOAL-1 | Goals | A goal's progress is the percentage of its milestones completed, not its tasks |
-| R-ENTITLE-1 | Billing ⬜ | Plan limits are enforced server-side. The client hides features but never gates them |
+| `projectId` | ObjectId → Project, optional | No meaningful default; guessing one would file a task under the wrong project |
+| `goalId` | ObjectId → Goal, optional | Denormalised — a Project already knows its Goal, but "everything under this goal" should stay one indexed query instead of a two-hop lookup |
+| `recurrence` | Subdocument, absent when not repeating | No `never` sentinel, so "is this recurring" is a presence check and cannot be contradicted |
+| `actualMinutes` | Integer `0…43200` | Logged time accumulates across sessions, so it is not capped at the estimate's 1440 |
+| `notes` | String ≤ 2000 | Working notes, kept separate from `description` (the brief) |
+
+`recurrence.freq` is `daily`, `weekly` or `monthly`, with `interval` defaulting to `1` and
+`daysOfWeek` (0 = Sunday) accepted **only** on a weekly rule. A day list on a daily rule is
+rejected rather than stored, because the scheduler would never read it and the document
+would be asserting something false.
+
+### Derive, never store
+
+**R-GOAL-1 has no counterpart field anywhere.** A Goal has no `progress`, no `completedCount`
+and no `totalCount`; `tests/phase2Models.test.js` asserts the path does not exist. Progress
+is `completedMilestones ÷ totalMilestones`, computed on read. A stored number is a second
+source of truth free to disagree with the milestones it was derived from, and nothing in
+the schema would stop it.
+
+The same reasoning gives HabitCompletion its own collection rather than a counter or a
+bitmask on Habit. Un-ticking a day means deleting a row, which is correct by construction;
+decrementing a counter is logic that can be wrong. A unique index on
+`{ habitId, date }` makes the load-bearing invariant the database's problem: without it a
+double-tap stores two rows, the streak counts both, and the number is quietly inflated.
+
+### Tenancy
+
+`userId` is required on Goal, Project and HabitCompletion, and Milestone has none — it
+reaches its owner through `goalId`. Tenancy lives in exactly one place per document, and
+`tests/phase2Models.test.js` asserts the absence rather than leaving it to review.
+
+HabitCompletion's `userId` is the one deliberate denormalisation: a streak query reads every
+completion for a user across a date range, and the alternative is a join on every read. The
+cost is that the service layer must restate it when a habit is reassigned.
+
+### Derived dates
+
+`HabitCompletion.date` is a local calendar date, anchored to local noon by the same helper
+as a task deadline (§3). The *model* does no coercion — anchoring is a validation-layer
+responsibility, so the schema stays a description of storage and not of timing.

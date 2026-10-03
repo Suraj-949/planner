@@ -86,11 +86,15 @@ planner/
 │   │   ├── tokens.test.js
 │   │   ├── auth.middleware.test.js
 │   │   ├── csrf.test.js
-│   │   └── task.controller.test.js  # runs against an in-memory MongoDB
+│   │   ├── task.controller.test.js  # runs against an in-memory MongoDB
+│   │   └── phase2Models.test.js     # Phase 2 schema contracts + index declarations
 │   └── src/
 │       ├── app.js                # Middleware chain + route mounting
 │       ├── db/
 │       │   └── db.js             # mongoose.connect wrapper + env validation
+│       ├── constants/
+│       │   └── index.js          # shared enums + limits, imported by the models and
+│       │                         # the validators so the two layers cannot drift
 │       ├── utils/
 │       │   ├── tokens.js         # JWT sign/verify, access vs refresh type separation, cookies
 │       │   ├── taskValidation.js  # Payload rules + local-noon deadline parsing
@@ -99,7 +103,12 @@ planner/
 │       │   └── logger.js         # Structured JSON logger with redaction
 │       ├── models/
 │       │   ├── user.model.js     # User schema
-│       │   └── task.model.js     # Task schema + indexes + enum/length constraints
+│       │   ├── task.model.js     # Task schema + embedded subtasks/recurrence + indexes
+│       │   ├── goal.model.js     # Goal — progress is derived, never stored
+│       │   ├── milestone.model.js# Milestone — reaches its owner via goalId
+│       │   ├── project.model.js  # Project — colour, archive timestamp, optional goal
+│       │   ├── habit.model.js    # Habit — cadence + target-per-period
+│       │   └── habitCompletion.model.js  # One row per habit per day
 │       ├── controllers/
 │       │   ├── auth.controller.js    # register, login, refreshToken, logout
 │       │   └── task.controller.js    # create, fetch, update, delete
@@ -304,18 +313,95 @@ the client. A task belonging to another user returns `404`.
 
 | Field | Type | Required | Default | Constraints |
 |---|---|---|---|---|
-| `title` | String | yes | — | — |
-| `description` | String | no | — | — |
+| `title` | String | yes | — | ≤ 200 chars |
+| `description` | String | no | — | ≤ 5000 chars |
 | `status` | String | no | `pending` | `pending` \| `in-progress` \| `completed` |
 | `deadline` | Date | yes | — | anchored at local noon — see BUSINESS-LOGIC §3.3 |
 | `category` | String | no | `other` | `DSA` \| `development` \| `college` \| `personal` \| `work` \| `other` |
 | `priority` | String | no | `medium` | `high` \| `medium` \| `low` |
+| `context` | String | no | — | project name, no default |
+| `projectId` | ObjectId → `Project` | no | — | unset by default |
+| `goalId` | ObjectId → `Goal` | no | — | denormalised from the project |
+| `recurrence` | Subdocument | no | — | `{ freq, interval, daysOfWeek }`, absent when not recurring |
+| `estimateMinutes` | Number | no | — | whole minutes, `0…1440` |
+| `actualMinutes` | Number | no | — | whole minutes, `0…43200` |
+| `tags` | String[] | no | — | trimmed, lowercased, de-duplicated |
+| `notes` | String | no | — | ≤ 2000 chars |
+| `subtasks` | Subdocument[] | no | — | embedded, `_id: false` |
 | `dateCreated` | Date | no | `Date.now` | true instant, stored UTC |
 | `userId` | ObjectId → `User` | yes | — | from the token |
 
-Enum values are currently declared in five places — the schema, three validators in
-`task.controller.js`, and the `<select>` dropdowns in two components. Collapsing these into
-one shared constants module is a Phase 2 item.
+Every enum and length limit above is declared once in `backend/src/constants/index.js` and
+imported by both `task.model.js` and `utils/taskValidation.js`. They used to be written out
+in five places — the schema, three validators, and two `<select>` dropdowns — and nothing
+failed when the copies disagreed, which is why `runValidators` felt untrustworthy. A test
+now asserts the schema's enums *are* the shared arrays.
+
+The `<select>` dropdowns still hardcode their own options; they read from the API's task
+metadata instead once 2.2 exposes it.
+
+### Goal — `backend/src/models/goal.model.js`
+
+| Field | Type | Required | Default | Constraints |
+|---|---|---|---|---|
+| `title` | String | yes | — | ≤ 200 chars |
+| `description` | String | no | — | ≤ 5000 chars |
+| `targetDate` | Date | no | — | — |
+| `status` | String | no | `active` | `active` \| `completed` \| `abandoned` |
+| `userId` | ObjectId → `User` | yes | — | — |
+
+**There is no `progress` field.** Progress is `completedMilestones ÷ totalMilestones`,
+computed on read — a stored number would be a second source of truth free to disagree with
+the milestones it came from. A test asserts the path does not exist.
+
+### Milestone — `backend/src/models/milestone.model.js`
+
+| Field | Type | Required | Constraints |
+|---|---|---|---|
+| `goalId` | ObjectId → `Goal` | yes | — |
+| `title` | String | yes | ≤ 200 chars |
+| `dueDate` | Date | no | — |
+| `completedAt` | Date | no | unset means open |
+
+No `userId`: a milestone reaches its owner through `goalId`. Tenancy lives in exactly one
+place per document.
+
+### Project — `backend/src/models/project.model.js`
+
+| Field | Type | Required | Constraints |
+|---|---|---|---|
+| `title` | String | yes | ≤ 200 chars |
+| `description` | String | no | ≤ 5000 chars |
+| `color` | String | no | six-digit hex, `#rrggbb` — no default |
+| `archivedAt` | Date | no | unset means active |
+| `goalId` | ObjectId → `Goal` | no | — |
+| `userId` | ObjectId → `User` | yes | — |
+
+### Habit — `backend/src/models/habit.model.js`
+
+| Field | Type | Required | Default | Constraints |
+|---|---|---|---|---|
+| `title` | String | yes | — | ≤ 200 chars |
+| `cadence` | String | no | `daily` | `daily` \| `weekly` \| `monthly` |
+| `targetPerPeriod` | Number | no | `1` | `1…31` — 31 is the most days a monthly period has |
+| `archivedAt` | Date | no | — | — |
+| `userId` | ObjectId → `User` | yes | — | — |
+
+### HabitCompletion — `backend/src/models/habitCompletion.model.js`
+
+| Field | Type | Required | Constraints |
+|---|---|---|---|
+| `habitId` | ObjectId → `Habit` | yes | — |
+| `date` | Date | yes | local calendar date, anchored at local noon |
+| `userId` | ObjectId → `User` | yes | denormalised so a streak query needs no join |
+
+**Unique index on `{ habitId, date }`.** One row per habit per day, and the database refuses
+a second — otherwise a double-tap stores two rows and the habit's own streak counts both.
+Un-ticking a day means deleting a row, which is correct by construction; a stored counter
+would need decrement logic that can be wrong.
+
+> Storage and validation only. Advancing a recurrence, counting a streak and deriving goal
+> progress arrive with the 2.2 services — none of these rules run yet.
 
 ---
 

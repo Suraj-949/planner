@@ -7,6 +7,9 @@ const {
     validateTaskPayload,
     VALID_CONTEXTS,
     MAX_ESTIMATE_MINUTES,
+    MAX_ACTUAL_MINUTES,
+    MAX_NOTES_LENGTH,
+    MAX_RECURRENCE_INTERVAL,
     MAX_TAG_COUNT,
     MAX_SUBTASK_COUNT,
 } = require('../src/utils/taskValidation');
@@ -343,5 +346,167 @@ test('an update touching only new fields leaves the rest untouched', () => {
         'estimateMinutes',
         'subtasks',
         'tags',
+    ]);
+});
+
+/* ------------------------------------------------------- recurrence (2.1) */
+
+test('a recurrence without an interval means every one period', () => {
+    const { value, errors } = validateTaskPayload(
+        { recurrence: { freq: 'daily' } },
+        { partial: true }
+    );
+
+    assert.deepEqual(errors, []);
+    assert.deepEqual(value.recurrence, { freq: 'daily', interval: 1 });
+});
+
+test('weekly recurrence days are de-duplicated and ordered', () => {
+    // Otherwise two clients that build the same rule differently would store documents
+    // that should be identical but would not compare equal.
+    const { value, errors } = validateTaskPayload(
+        { recurrence: { freq: 'weekly', daysOfWeek: [5, 1, 3, 1] } },
+        { partial: true }
+    );
+
+    assert.deepEqual(errors, []);
+    assert.deepEqual(value.recurrence, { freq: 'weekly', interval: 1, daysOfWeek: [1, 3, 5] });
+});
+
+test('a weekly recurrence must name at least one day', () => {
+    for (const daysOfWeek of [undefined, []]) {
+        const { errors } = validateTaskPayload(
+            { recurrence: { freq: 'weekly', daysOfWeek } },
+            { partial: true }
+        );
+
+        assert.ok(
+            errors.some((message) => /at least one day/.test(message)),
+            `expected daysOfWeek=${JSON.stringify(daysOfWeek)} to be rejected`
+        );
+    }
+});
+
+test('only a weekly recurrence may carry a day list', () => {
+    // Keeping it would store a claim the scheduler never reads.
+    const { errors } = validateTaskPayload(
+        { recurrence: { freq: 'daily', daysOfWeek: [1] } },
+        { partial: true }
+    );
+
+    assert.ok(errors.some((message) => /only a weekly recurrence/i.test(message)));
+});
+
+test('recurrence rejects an unknown frequency, a bad day and a bad interval', () => {
+    const cases = [
+        [{ recurrence: { freq: 'hourly' } }, /frequency/],
+        [{ recurrence: { freq: 'weekly', daysOfWeek: [7] } }, /0 to 6/],
+        [{ recurrence: { freq: 'weekly', daysOfWeek: [-1] } }, /0 to 6/],
+        [{ recurrence: { freq: 'daily', interval: 0 } }, /interval/],
+        [{ recurrence: { freq: 'daily', interval: 1.5 } }, /interval/],
+        [{ recurrence: { freq: 'daily', interval: MAX_RECURRENCE_INTERVAL + 1 } }, /interval/],
+        [{ recurrence: 'daily' }, /must be an object/],
+    ];
+
+    for (const [payload, pattern] of cases) {
+        const { errors } = validateTaskPayload(payload, { partial: true });
+
+        assert.ok(
+            errors.some((message) => pattern.test(message)),
+            `expected ${JSON.stringify(payload)} to be rejected with ${pattern}`
+        );
+    }
+});
+
+test('an explicit null clears recurrence', () => {
+    const { value, errors } = validateTaskPayload({ recurrence: null }, { partial: true });
+
+    assert.deepEqual(errors, []);
+    assert.equal(value.recurrence, undefined);
+});
+
+/* --------------------------------------------------- hierarchy links (2.1) */
+
+test('project and goal links must be ids, and empty clears them', () => {
+    const id = '507f1f77bcf86cd799439011';
+
+    const linked = validateTaskPayload({ projectId: id, goalId: id }, { partial: true });
+
+    assert.deepEqual(linked.errors, []);
+    assert.equal(linked.value.projectId, id);
+    assert.equal(linked.value.goalId, id);
+
+    // "" is what a form submits for "no selection", so it has to un-file rather than fail.
+    const cleared = validateTaskPayload({ projectId: '', goalId: null }, { partial: true });
+
+    assert.deepEqual(cleared.errors, []);
+    assert.equal(cleared.value.projectId, undefined);
+    assert.equal(cleared.value.goalId, undefined);
+
+    for (const bad of ['not-an-id', 12345]) {
+        const { errors } = validateTaskPayload({ projectId: bad }, { partial: true });
+
+        assert.ok(
+            errors.some((message) => /Project must be a valid id/.test(message)),
+            `expected projectId ${JSON.stringify(bad)} to be rejected`
+        );
+    }
+});
+
+/* ------------------------------------------------ logged time and notes (2.1) */
+
+test('actual minutes follow the same rules as estimates, with a larger ceiling', () => {
+    const ok = validateTaskPayload({ actualMinutes: MAX_ACTUAL_MINUTES }, { partial: true });
+
+    assert.deepEqual(ok.errors, []);
+    assert.equal(ok.value.actualMinutes, MAX_ACTUAL_MINUTES);
+
+    // A whole number still matters, and the ceiling is not the estimate's: logged time
+    // accumulates across sessions.
+    for (const bad of ['', '  ', '7.5', -1, MAX_ACTUAL_MINUTES + 1, true]) {
+        const { errors } = validateTaskPayload({ actualMinutes: bad }, { partial: true });
+
+        assert.ok(
+            errors.some((message) => /Actual must be/.test(message)),
+            `expected actualMinutes ${JSON.stringify(bad)} to be rejected`
+        );
+    }
+
+    assert.ok(MAX_ACTUAL_MINUTES > MAX_ESTIMATE_MINUTES);
+});
+
+test('notes are trimmed and length-capped', () => {
+    const ok = validateTaskPayload({ notes: '  reviewed with Sam  ' }, { partial: true });
+
+    assert.deepEqual(ok.errors, []);
+    assert.equal(ok.value.notes, 'reviewed with Sam');
+
+    const atLimit = validateTaskPayload({ notes: 'x'.repeat(MAX_NOTES_LENGTH) }, { partial: true });
+
+    assert.deepEqual(atLimit.errors, []);
+
+    const tooLong = validateTaskPayload({ notes: 'x'.repeat(MAX_NOTES_LENGTH + 1) }, { partial: true });
+
+    assert.ok(tooLong.errors.some((message) => /Notes must be at most/.test(message)));
+    assert.equal(tooLong.value.notes, undefined);
+});
+
+test('an update touching only the new fields leaves the rest untouched', () => {
+    const { value, errors } = validateTaskPayload(
+        {
+            projectId: '507f1f77bcf86cd799439011',
+            recurrence: { freq: 'weekly', daysOfWeek: [2] },
+            actualMinutes: 45,
+            notes: 'blocked on review',
+        },
+        { partial: true }
+    );
+
+    assert.deepEqual(errors, []);
+    assert.deepEqual(Object.keys(value).sort(), [
+        'actualMinutes',
+        'notes',
+        'projectId',
+        'recurrence',
     ]);
 });

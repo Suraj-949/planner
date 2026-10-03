@@ -26,8 +26,15 @@ Already built and working — **do not rebuild**:
 - Pomodoro timer (25/5) that survives page reload via stored epoch
 - Tailwind CSS 4 + lucide-react + React Router 7
 
-Not yet present: subtasks, projects, goals, recurring tasks, time tracking, search/filter,
-pagination, server-side analytics, habits, database-backed streak, multi-tenancy, tests.
+Not yet present: time tracking UI, search/filter, pagination, server-side analytics, habit
+tracking UI, database-backed streak.
+
+Present as **schema and validation only** — storage landed in 2.1, the behaviour that uses
+it is 2.2 and 2.4: subtasks (embedded in `Task`), `Task` ↔ project/goal links, recurrence
+rules, habits and habit completions, and the goal/milestone/project collections.
+
+Also already true, though listed nowhere above: multi-tenancy (`userId` on every owned
+document) and an automated test suite (109 tests, `node:test` only).
 
 ---
 
@@ -122,7 +129,7 @@ Structured JSON logger replacing `console.log`, with redaction
 - ✅ Tests for token signing, type separation, and expiry
 - ✅ Tests for date normalisation across timezones
 - ✅ Tests for auth middleware (valid / missing / malformed / wrong-type tokens)
-- ✅ Controller tests with `mongodb-memory-server` (19 tests against a real database)
+- ✅ Controller tests with `mongodb-memory-server` (25 tests against a real database)
 - ✅ GitHub Actions: lint + test + build + audit, and an image-build smoke test
 
 ### 1.8 Deployment
@@ -143,23 +150,45 @@ correct deadlines in every timezone, deployable with one command, core logic tes
 
 ### 2.1 New Models
 
+✅ **Complete.** Five collections added, Task extended, enums centralised, 109 tests green.
+
 | Model | Key fields |
 |---|---|
 | `Goal` | title, description, targetDate, status, userId |
 | `Milestone` | goalId, title, dueDate, completedAt |
 | `Project` | title, description, color, archivedAt, goalId, userId |
-| `Subtask` | see open decision — embedded array vs own collection |
+| `Subtask` | **resolved: embedded in `Task`**, not its own collection — see below |
 | `Habit` | title, cadence, targetPerPeriod, archivedAt, userId |
 | `HabitCompletion` | habitId, date, userId |
 
 Extensions to the existing `Task` model:
 
 - `projectId`, `goalId` — links up the hierarchy
-- `parentId` — subtask parent, if using a separate collection
+- ~~`parentId`~~ — **not needed.** Dropped with the separate-collection decision below
 - `recurrence` — object: `{ freq, interval, daysOfWeek }`
 - `estimateMinutes`, `actualMinutes` — estimated vs actual
 - `tags` — string array
 - `notes` — string
+
+**Subtask decision (was open).** Subtasks stay embedded in `Task`. They have no life outside
+their task and are never queried on their own, so a collection and a join would buy nothing.
+The array position is the identity, so the embedded documents carry `_id: false`. Splitting
+later stays cheap because the read path already loads the parent.
+
+**Cross-cutting: shared enums.** The four task enums were previously written out in both
+`task.model.js` and `taskValidation.js`, and nothing failed when the copies disagreed — which
+is why `runValidators` felt untrustworthy. They now live in `backend/src/constants/index.js`
+alongside the new goal, recurrence and habit enums and the length/range limits, and both
+layers import it. A test asserts the schema's enums *are* the shared arrays, so a
+hand-written copy reintroduced anywhere fails the suite.
+
+**Derived, never stored.** `Goal` has no `progress` field: progress is
+`completedMilestones ÷ totalMilestones`, computed on read. Likewise `HabitCompletion` stores
+one row per completed day rather than a streak counter, with a unique index on
+`{ habitId, date }` so a double-tap cannot inflate a habit's own streak.
+
+Storage and validation only — the services that advance a recurrence, count a streak and
+derive goal progress are 2.2.
 
 ### 2.2 Backend Services
 
