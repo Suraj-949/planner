@@ -1,9 +1,11 @@
-import TaskRow, { COLUMNS } from './TaskRow'
+import TaskRow, { GRID, COLUMNS } from './TaskRow'
 import Badge from '../ui/Badge'
-import { Check, Gauge, Keyboard } from 'lucide-react'
+import { Check, Gauge, Keyboard, Pencil, Trash2 } from 'lucide-react'
 
-const HeadingGrid =
-    'grid grid-cols-[28px_minmax(0,1fr)_84px_112px_128px] items-center gap-3 border-b border-border bg-surface-raised px-3 py-2'
+// Composed from TaskRow's GRID rather than restated. It previously duplicated the
+// `grid-cols-[...]` template, so adding a column to the row left the header one column
+// narrow and every heading shifted left of its cell.
+const HeadingGrid = `${GRID} border-b border-border bg-surface-raised px-3 py-2`
 
 const SectionHeading = () => (
     <div className={HeadingGrid}>
@@ -16,27 +18,63 @@ const SectionHeading = () => (
     </div>
 )
 
-const CompletedRow = ({ task, onToggle }) => (
-    <button
-        type="button"
-        onClick={() => onToggle(task.id)}
-        className="flex w-full items-center gap-2.5 border-b border-border px-3 py-2 text-left transition last:border-b-0 hover:bg-surface-raised"
-    >
-        <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] bg-secondary text-secondary-contrast">
-            <Check className="h-2.5 w-2.5" strokeWidth={3} />
-        </span>
+const CompletedRow = ({ task, onToggle, onEdit, onDelete, canMutate = true }) => (
+    <div className="flex items-center gap-2.5 border-b border-border px-3 py-2 transition last:border-b-0 hover:bg-surface-raised">
+        <button
+            type="button"
+            onClick={() => onToggle(task.id)}
+            aria-label={`Mark "${task.title}" as incomplete`}
+            className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+        >
+            <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] bg-secondary text-secondary-contrast">
+                <Check className="h-2.5 w-2.5" strokeWidth={3} />
+            </span>
 
-        <span className="truncate text-sm text-content-subtle line-through decoration-content-subtle/70">
-            {task.title}
-        </span>
+            <span className="truncate text-sm text-content-subtle line-through decoration-content-subtle/70">
+                {task.title}
+            </span>
 
-        <span className="ml-auto shrink-0 text-[11px] text-content-subtle tabular-nums">
-            {task.context}
-        </span>
-    </button>
+            <span className="ml-auto shrink-0 text-[11px] text-content-subtle tabular-nums">
+                {task.context}
+            </span>
+        </button>
+
+        {canMutate && (
+            <div className="flex shrink-0 items-center gap-0.5">
+                <button
+                    type="button"
+                    onClick={() => onEdit(task)}
+                    aria-label={`Edit "${task.title}"`}
+                    title="Edit"
+                    className="rounded-control p-1.5 text-content-subtle transition-colors duration-100 hover:bg-surface-overlay hover:text-content"
+                >
+                    <Pencil className="h-3.5 w-3.5" strokeWidth={1.8} />
+                </button>
+
+                <button
+                    type="button"
+                    onClick={() => onDelete(task)}
+                    aria-label={`Delete "${task.title}"`}
+                    title="Delete"
+                    className="rounded-control p-1.5 text-content-subtle transition-colors duration-100 hover:bg-danger-soft hover:text-danger"
+                >
+                    <Trash2 className="h-3.5 w-3.5" strokeWidth={1.8} />
+                </button>
+            </div>
+        )}
+    </div>
 )
 
-const TaskList = ({ activeTasks, completedTasks, onToggle, onStartFocus, footer }) => {
+const TaskList = ({
+    activeTasks,
+    completedTasks,
+    onToggle,
+    onStartFocus,
+    onEdit,
+    onDelete,
+    canMutate = true,
+    footer,
+}) => {
     return (
         <div className="overflow-hidden rounded-card border border-border bg-surface">
             <SectionHeading />
@@ -47,7 +85,15 @@ const TaskList = ({ activeTasks, completedTasks, onToggle, onStartFocus, footer 
                 </p>
             ) : (
                 activeTasks.map((task) => (
-                    <TaskRow key={task.id} task={task} onToggle={onToggle} onStartFocus={onStartFocus} />
+                    <TaskRow
+                        key={task.id}
+                        task={task}
+                        onToggle={onToggle}
+                        onStartFocus={onStartFocus}
+                        onEdit={onEdit}
+                        onDelete={onDelete}
+                        canMutate={canMutate}
+                    />
                 ))
             )}
 
@@ -62,7 +108,14 @@ const TaskList = ({ activeTasks, completedTasks, onToggle, onStartFocus, footer 
                     </div>
 
                     {completedTasks.map((task) => (
-                        <CompletedRow key={task.id} task={task} onToggle={onToggle} />
+                        <CompletedRow
+                            key={task.id}
+                            task={task}
+                            onToggle={onToggle}
+                            onEdit={onEdit}
+                            onDelete={onDelete}
+                            canMutate={canMutate}
+                        />
                     ))}
                 </div>
             )}

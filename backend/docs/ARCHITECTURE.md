@@ -64,12 +64,21 @@ backend/
     │   ├── project.model.js       # projects, optional goal + archive timestamp
     │   ├── habit.model.js         # cadence + target-per-period
     │   └── habitCompletion.model.js  # one row per habit per day
-    ├── controllers/
-    ├── routes/
+    ├── controllers/               # auth, task, goal, milestone, project, habit
+    ├── routes/                    # one router per domain, mounted in app.js
+    ├── services/
+    │   ├── streak.service.js      # per-user streak from Task.completedAt
+    │   ├── habit.service.js       # streaks over scheduled occurrences
+    │   ├── recurrence.service.js  # advance a rule, materialise the next task
+    │   ├── stats.service.js       # dashboard aggregates
+    │   ├── goal.service.js        # progress derived from milestones
+    │   └── ownership.service.js   # one place the tenancy guards live
     └── utils/
         ├── tokens.js             # sign/verify, token types
-        ├── http.js               # ApiError, asyncHandler
-        ├── taskValidation.js     # payload validation, local-noon dates
+        ├── http.js               # ApiError, asyncHandler, buildUpdate
+        ├── dates.js              # local calendar helpers, shared by the services
+        ├── taskValidation.js     # task payload validation, local-noon dates
+        ├── entityValidation.js   # goal/milestone/project/habit validation
         ├── response.js           # response envelope
         └── logger.js             # structured, redacting JSON logger
 ```
@@ -78,6 +87,12 @@ backend/
 were written out in both `task.model.js` and `taskValidation.js`, and the two copies were
 free to disagree. Both import the module now, and `tests/phase2Models.test.js` asserts the
 schema's enums *are* the shared arrays.
+
+**`utils/dates.js` exists so the day boundary is defined once.** The streak buckets
+completions by calendar day, the habit cadence buckets them by period, and recurrence
+advances a deadline — three features that would otherwise each grow their own idea of
+"which day is this", and disagree the first time a DST transition made a day 23 or 25
+hours long.
 
 ---
 
@@ -90,30 +105,22 @@ Requests flow strictly downward. A layer may only call the one directly below it
 | **Middleware** | Cross-cutting: auth, rate limits, CORS, CSRF, request IDs, parsing | Contain business logic |
 | **Routes** | Map method + path to a controller. Declare middleware order | Contain logic or queries |
 | **Controllers** | Read/validate input, call a model, shape the response | Contain reusable logic, query Mongo directly for anything non-trivial |
-| **Services** ⬜ | Domain logic, multi-model operations, aggregation pipelines | Touch `req` / `res` |
+| **Services** ✅ | Domain logic, multi-model operations, aggregation pipelines | Touch `req` / `res` |
 | **Models** | Schema definition, indexes, virtuals, statics | Contain business rules |
 | **Utils** | Pure functions with no I/O | Import anything from the rest of the app |
 
-**The controller layer stays thin.** Validation lives in `utils/taskValidation.js`. Services
-become necessary in Phase 2, when task creation has to fan out to recurrence materialisation,
-streak updates, and activity logging.
+**The controller layer stays thin.** Validation lives in `utils/taskValidation.js` and
+`utils/entityValidation.js`. Anything that spans more than one collection — streaks,
+recurrence, habit cadences, goal progress, the tenancy guards — lives in a service, so a
+controller never grows its own aggregation pipeline.
 
-### Module Organisation ⬜
+### Module Organisation — deferred
 
-Phase 2 reorganises into vertical domain modules:
-
-```text
-src/modules/tasks/
-├── tasks.routes.js
-├── tasks.controller.js
-├── tasks.service.js
-├── tasks.validators.js
-├── task.model.js
-└── tasks.test.js
-```
-
-Routes still mount centrally in `app.js`, so the public API stays visible in one file while
-implementation stays cohesive per domain.
+The plan was to reorganise into vertical domain modules (`src/modules/tasks/…` with the
+routes, controller, service, validator and model together). Phase 2 was delivered against
+the existing flat layout instead, because the split is a pure refactor: it moves files
+without changing behaviour, and doing it in the same pass as the new services would have
+made every diff harder to review. Worth doing before Phase 3, not during it.
 
 ---
 
@@ -291,7 +298,7 @@ the same way. Deduplicating that into one module is a reasonable Phase 2 cleanup
 
 ## 10. Testing
 
-`npm test` runs `node --test "tests/**/*.test.js"`. 109 tests, no framework dependency —
+`npm test` runs `node --test "tests/**/*.test.js"`. 190 tests, no framework dependency —
 Node's built-in runner is the only harness.
 
 | File | Tests | Scope |
@@ -299,12 +306,19 @@ Node's built-in runner is the only harness.
 | `tests/taskValidation.test.js` | 31 | Required fields, enums, empty-string enums, trimming, unknown fields, `context`/`estimateMinutes`/`tags`/`subtasks` rules, local-noon anchoring, a 10-timezone rendering matrix, plus `recurrence`/`projectId`/`goalId`/`actualMinutes`/`notes` |
 | `tests/phase2Models.test.js` | 25 | Schema contracts for Goal, Milestone, Project, Habit and HabitCompletion; index declarations; the derive-never-store and single-source-of-enums invariants |
 | `tests/task.controller.test.js` | 25 | CRUD against a real database, per-user isolation, update-returns-post-image, envelope shape, default values, dashboard-field round-trip, `$unset` clearing |
+| `tests/dates.test.js` | 16 | Local-noon anchoring, day-key round trips, month-end and year-end rollover, month clamping, and a DST matrix proving a 23- or 25-hour day still reports the right calendar date |
+| `tests/recurrence.test.js` | 20 | Daily/weekly/monthly advancement, interval handling, invalid input, and R-RECUR-2's collapse of missed occurrences into one future task |
+| `tests/streak.test.js` | 12 | R-STREAK-1 through R-STREAK-8 against the pure walk: grace for an incomplete day, reset-to-most-recent rather than zero, day-level de-duplication, no negative result |
+| `tests/habit.test.js` | 18 | R-HAB-1 and R-HAB-2 — a 3x-per-week habit surviving a missed Monday, monthly period keys, longest streak, and I-7's empty-dataset-is-zero |
+| `tests/entityValidation.test.js` | 22 | Goal/Milestone/Project/Habit payloads, field whitelisting, colour and target bounds, and the required-vs-malformed id split |
 | `tests/auth.middleware.test.js` | 11 | Missing, malformed, non-Bearer, wrong-type, expired, RFC 7235 case-insensitive scheme, no credential leakage |
 | `tests/tokens.test.js` | 9 | Signing, expiry, wrong-secret rejection, tampered payload, type separation, access/refresh lifetime ordering |
 | `tests/csrf.test.js` | 8 | Origin and Referer allow/deny, cookie scoping, safe methods, non-browser clients |
 
 Controllers run against `mongodb-memory-server`, so the suite needs no external database
-and never touches development data.
+and never touches development data. The five Phase 2 service and util suites are pure —
+they need no database at all, which is why the streak, the habit cadence and the
+recurrence can each be tested against every awkward calendar case without a fixture.
 
 ### Why the suite is written the way it is
 

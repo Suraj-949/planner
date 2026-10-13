@@ -7,6 +7,8 @@ const router = express.Router();
 // Every task route is authenticated; the middleware also scopes each query to req.user.
 router.post('/create', authMiddleware, taskController.createTask);
 router.get('/fetch', authMiddleware, taskController.getTasks);
+router.get('/stats', authMiddleware, taskController.getTaskStats);
+router.get('/streak', authMiddleware, taskController.getTaskStreak);
 router.put('/update/:id', authMiddleware, taskController.updateTask);
 router.delete('/delete/:id', authMiddleware, taskController.deleteTask);
 

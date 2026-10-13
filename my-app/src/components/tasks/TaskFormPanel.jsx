@@ -3,7 +3,15 @@ import Button from '../ui/Button'
 import Checkbox from '../ui/Checkbox'
 import Input from '../ui/Input'
 import Label from '../ui/Label'
-import { PROJECTS, RECURRING_OPTIONS, TASK_PRIORITIES } from '../../constants/taskMeta'
+import {
+    PROJECTS,
+    RECURRING_OPTIONS,
+    TASK_PRIORITIES,
+    WEEKDAY_LABELS,
+    fromRecurrence,
+} from '../../constants/taskMeta'
+import { toDateInputValue, parseDateValue } from '../../utils/dates'
+import { formatEstimate } from '../../utils/taskAdapter'
 import { CalendarDays, Plus, Repeat, X } from 'lucide-react'
 
 const SEGMENT_BASE =
@@ -16,65 +24,139 @@ const Field = ({ label, htmlFor, children }) => (
     </div>
 )
 
-const CreateTaskPanel = ({ onClose, onCreate }) => {
-    const [form, setForm] = useState({
-        title: 'Implement Dark Mode Heatmap for Habits',
-        description:
-            'Build GitHub-style contribution squares using green #22C55E intensities...',
-        project: 'Planner Core',
-        deadline: '2025-10-26',
-        priority: 'high',
-        estimate: '1h 45m',
-        recurring: 'Daily',
+const selectClass =
+    'h-8 w-full rounded-control border border-border bg-surface-input px-2 text-xs text-content outline-none transition hover:border-border-strong focus:border-primary focus:ring-2 focus:ring-primary-soft'
+
+/*
+ * Today as a local YYYY-MM-DD, used when the form opens with no deadline.
+ *
+ * Defaults to today rather than an empty value because the API requires a deadline and
+ * the submit button is enabled regardless — leaving it blank turned every unedited create
+ * into a 400 with no visible cause.
+ */
+const todayInputValue = () => {
+    const now = new Date()
+
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(
+        now.getDate()
+    ).padStart(2, '0')}`
+}
+
+/*
+ * One form for both creating and editing a task.
+ *
+ * Renamed from CreateTaskPanel: it previously only created, so editing a task required a
+ * second component (the legacy UpdateTaskModal) with its own copy of every field, its own
+ * hardcoded enum lists, and its own idea of what a subtask looks like. One panel means one
+ * place where a field is defined.
+ */
+const TaskFormPanel = ({ mode = 'create', initialTask, onClose, onSubmit }) => {
+    const isEdit = mode === 'edit'
+
+    const [form, setForm] = useState(() => {
+        const recurrence = fromRecurrence(initialTask?.recurrence)
+
+        return {
+            // Empty rather than the previous prefilled demo copy. That draft shipped a real
+            // task titled "Implement Dark Mode Heatmap for Habits" with a deadline of
+            // 2025-10-26 — already overdue — the moment anyone clicked Create.
+            title: initialTask?.title ?? '',
+            description: initialTask?.description ?? '',
+            notes: initialTask?.notes ?? '',
+            project: initialTask?.context ?? PROJECTS[0],
+            deadline: toDateInputValue(initialTask?.deadline) || todayInputValue(),
+            priority: initialTask?.priority ?? 'medium',
+            estimate: initialTask?.estimateMinutes ? formatEstimate(initialTask.estimateMinutes) : '',
+            recurring: recurrence.preset,
+            daysOfWeek: recurrence.daysOfWeek,
+        }
     })
 
-    const [subtasks, setSubtasks] = useState([
-        'Define SVG matrix dimensions',
-        'Calculate 5 green tone levels',
-        'Wire hover tooltips with logged time',
-    ])
+    // Subtasks arrive from the API as `{ title, completed }` and are created as plain
+    // strings, so both are normalised to objects here — otherwise opening an existing task
+    // for edit renders "[object Object]" and saving it corrupts the list.
+    const [subtasks, setSubtasks] = useState(() =>
+        (initialTask?.subtasks ?? []).map((subtask) =>
+            typeof subtask === 'string'
+                ? { title: subtask, completed: false }
+                : { title: subtask.title ?? '', completed: Boolean(subtask.completed) }
+        )
+    )
 
     const [draftSubtask, setDraftSubtask] = useState('')
 
     const update = (key) => (event) =>
         setForm((current) => ({ ...current, [key]: event.target.value }))
 
+    const toggleDay = (day) =>
+        setForm((current) => ({
+            ...current,
+            daysOfWeek: current.daysOfWeek.includes(day)
+                ? current.daysOfWeek.filter((value) => value !== day)
+                : [...current.daysOfWeek, day].sort((a, b) => a - b),
+        }))
+
     const addSubtask = () => {
         const value = draftSubtask.trim()
 
         if (!value) return
 
-        setSubtasks((current) => [...current, value])
+        setSubtasks((current) => [...current, { title: value, completed: false }])
         setDraftSubtask('')
     }
 
     const removeSubtask = (index) =>
         setSubtasks((current) => current.filter((_, position) => position !== index))
 
+    const toggleSubtask = (index) =>
+        setSubtasks((current) =>
+            current.map((subtask, position) =>
+                position === index ? { ...subtask, completed: !subtask.completed } : subtask
+            )
+        )
+
     const handleSubmit = (event) => {
-        event.preventDefault()
+        event?.preventDefault?.()
 
         const title = form.title.trim()
 
         if (!title) return
 
-        onCreate({ ...form, title, subtasks })
+        const deadline = parseDateValue(form.deadline)
+
+        if (!deadline) return
+
+        onSubmit({
+            title,
+            description: form.description.trim(),
+            notes: form.notes.trim(),
+            context: form.project,
+            priority: form.priority,
+            deadline,
+            estimate: form.estimate,
+            recurring: form.recurring,
+            subtasks,
+        })
     }
+
+    const needsDays = form.recurring === 'weekly'
 
     return (
         // Width comes from the parent wrapper (fixed 268px column at xl+, full width when
         // stacked), so the panel itself only owns its vertical layout and surfaces.
         <aside
-            aria-label="Create new task"
+            aria-label={isEdit ? 'Edit task' : 'Create new task'}
             className="flex h-full w-full flex-col overflow-y-auto bg-surface"
         >
             {/* Header */}
             <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b border-border bg-surface px-3 py-2.5">
-                <h2 className="text-sm font-semibold text-content">Create New Task</h2>
+                <h2 className="text-sm font-semibold text-content">
+                    {isEdit ? 'Edit Task' : 'Create New Task'}
+                </h2>
                 <button
                     type="button"
                     onClick={onClose}
-                    aria-label="Close create task panel"
+                    aria-label={isEdit ? 'Close edit panel' : 'Close create task panel'}
                     className="rounded-control p-1 text-content-subtle transition hover:bg-surface-overlay hover:text-content"
                 >
                     <X className="h-4 w-4" strokeWidth={1.8} />
@@ -109,7 +191,7 @@ const CreateTaskPanel = ({ onClose, onCreate }) => {
                             id="ct-project"
                             value={form.project}
                             onChange={update('project')}
-                            className="h-8 w-full rounded-control border border-border bg-surface-input px-2 text-xs text-content outline-none transition hover:border-border-strong focus:border-primary focus:ring-2 focus:ring-primary-soft"
+                            className={selectClass}
                         >
                             {PROJECTS.map((project) => (
                                 <option key={project} value={project}>
@@ -190,14 +272,43 @@ const CreateTaskPanel = ({ onClose, onCreate }) => {
                                 className="h-8 w-full rounded-control border border-border bg-surface-input pl-7 pr-2 text-xs text-content outline-none transition hover:border-border-strong focus:border-primary focus:ring-2 focus:ring-primary-soft"
                             >
                                 {RECURRING_OPTIONS.map((option) => (
-                                    <option key={option} value={option}>
-                                        {option}
+                                    <option key={option.value} value={option.value}>
+                                        {option.label}
                                     </option>
                                 ))}
                             </select>
                         </div>
                     </Field>
                 </div>
+
+                {/* A weekly rule names its days. Shown only then, because a daily or monthly
+                    rule would reject the day list server-side. */}
+                {needsDays && (
+                    <Field label="On days">
+                        <div className="flex gap-1">
+                            {WEEKDAY_LABELS.map((label, day) => {
+                                const active = form.daysOfWeek.includes(day)
+
+                                return (
+                                    <button
+                                        key={day}
+                                        type="button"
+                                        onClick={() => toggleDay(day)}
+                                        aria-pressed={active}
+                                        aria-label={`Day ${day}`}
+                                        className={`h-7 w-7 rounded-full border text-[11px] font-semibold transition-colors duration-100 ${
+                                            active
+                                                ? 'border-primary bg-primary text-primary-contrast'
+                                                : 'border-border bg-surface-input text-content-subtle hover:border-border-strong'
+                                        }`}
+                                    >
+                                        {label}
+                                    </button>
+                                )
+                            })}
+                        </div>
+                    </Field>
+                )}
 
                 {/* Subtasks */}
                 <div className="space-y-1.5">
@@ -216,15 +327,28 @@ const CreateTaskPanel = ({ onClose, onCreate }) => {
 
                     <ul className="space-y-1">
                         {subtasks.map((subtask, index) => (
-                            <li key={`${subtask}-${index}`} className="group flex items-center gap-2">
-                                <Checkbox checked readOnly aria-label={subtask} />
-                                <span className="flex-1 truncate text-xs text-content-muted">
-                                    {subtask}
+                            <li
+                                key={`${subtask.title}-${index}`}
+                                className="group flex items-center gap-2"
+                            >
+                                <Checkbox
+                                    checked={subtask.completed}
+                                    onChange={() => toggleSubtask(index)}
+                                    aria-label={subtask.title}
+                                />
+                                <span
+                                    className={`flex-1 truncate text-xs ${
+                                        subtask.completed
+                                            ? 'text-content-subtle line-through'
+                                            : 'text-content-muted'
+                                    }`}
+                                >
+                                    {subtask.title}
                                 </span>
                                 <button
                                     type="button"
                                     onClick={() => removeSubtask(index)}
-                                    aria-label={`Remove ${subtask}`}
+                                    aria-label={`Remove ${subtask.title}`}
                                     className="rounded-control p-0.5 text-content-subtle opacity-0 transition group-hover:opacity-100 hover:text-danger"
                                 >
                                     <X className="h-3 w-3" strokeWidth={2} />
@@ -247,6 +371,17 @@ const CreateTaskPanel = ({ onClose, onCreate }) => {
                         aria-label="New subtask"
                     />
                 </div>
+
+                <Field label="Notes" htmlFor="ct-notes">
+                    <textarea
+                        id="ct-notes"
+                        rows={2}
+                        value={form.notes}
+                        onChange={update('notes')}
+                        placeholder="Working notes, blockers, links..."
+                        className="w-full resize-y rounded-control border border-border bg-surface-input px-3 py-2 text-xs leading-relaxed text-content outline-none transition placeholder:text-content-subtle focus:border-primary focus:ring-2 focus:ring-primary-soft"
+                    />
+                </Field>
             </form>
 
             {/* Actions */}
@@ -258,16 +393,10 @@ const CreateTaskPanel = ({ onClose, onCreate }) => {
                     className="w-full"
                     onClick={handleSubmit}
                 >
-                    Create Task
+                    {isEdit ? 'Save Changes' : 'Create Task'}
                 </Button>
 
-                <div className="flex items-center justify-between">
-                    <button
-                        type="button"
-                        className="text-[11px] font-semibold text-primary transition hover:text-primary-hover"
-                    >
-                        Start Focus Now
-                    </button>
+                <div className="flex items-center justify-end">
                     <button
                         type="button"
                         onClick={onClose}
@@ -281,4 +410,4 @@ const CreateTaskPanel = ({ onClose, onCreate }) => {
     )
 }
 
-export default CreateTaskPanel
+export default TaskFormPanel

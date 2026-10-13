@@ -115,7 +115,7 @@ export const matchTaskId = (task, id) => String(task.id) === String(id);
 const isLocalSeedTask = (task) => typeof task.due === 'string' && task.deadline === undefined;
 
 export const toViewTask = (task) => {
-    if (isLocalSeedTask(task)) return task;
+    if (isLocalSeedTask(task)) return task
 
     return {
         id: task._id ?? task.id,
@@ -129,6 +129,18 @@ export const toViewTask = (task) => {
         dayOffset: toDayOffset(task.deadline),
         tags: task.tags ?? [],
         subtasks: task.subtasks ?? [],
+
+        // Kept raw alongside the presentation fields above so the edit form can repopulate
+        // itself without re-fetching: dropping them here made a round-trip through the API
+        // the only way to open an existing task, and silently blanked every field the
+        // dashboard does not render.
+        description: task.description ?? '',
+        notes: task.notes ?? '',
+        deadline: task.deadline ?? null,
+        actualMinutes: task.actualMinutes ?? null,
+        recurrence: task.recurrence ?? null,
+        projectId: task.projectId ?? null,
+        goalId: task.goalId ?? null,
     };
 };
 

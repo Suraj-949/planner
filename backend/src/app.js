@@ -5,12 +5,16 @@ const cookies = require('cookie-parser');
 
 const authRoutes = require('./routes/auth.routes');
 const taskRoutes = require('./routes/task.routes');
+const goalRoutes = require('./routes/goal.routes');
+const milestoneRoutes = require('./routes/milestone.routes');
+const projectRoutes = require('./routes/project.routes');
+const habitRoutes = require('./routes/habit.routes');
 const { apiLimiter } = require('./middleware/rateLimit.middleware');
 const { csrfGuard } = require('./middleware/csrf.middleware');
 const { requestIdMiddleware } = require('./middleware/requestId.middleware');
 const { ApiError } = require('./utils/http');
 const { logger } = require('./utils/logger');
-const { ok } = require('./utils/response');
+const { ok, errorResponse } = require('./utils/response');
 
 const app = express();
 
@@ -71,6 +75,10 @@ app.use('/api', csrfGuard);
 
 app.use('/api/auth', authRoutes);
 app.use('/api/tasks', taskRoutes);
+app.use('/api/goals', goalRoutes);
+app.use('/api/milestones', milestoneRoutes);
+app.use('/api/projects', projectRoutes);
+app.use('/api/habits', habitRoutes);
 
 // Any request that reached this point matched no route.
 app.use((req, res, next) => {
@@ -84,24 +92,38 @@ app.use((req, res, next) => {
  */
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
-    // Duplicate key from a race that slipped past the pre-check.
+    // Duplicate key from a race that slipped past the pre-check. Kept at 400 to match the
+    // register handler, which answers the same condition the same way.
     if (err.code === 11000) {
-        return res.status(400).json({ message: 'A record with these values already exists' });
+        return errorResponse(res, {
+            statusCode: 400,
+            code: 'DUPLICATE_KEY',
+            message: 'A record with these values already exists',
+        });
     }
 
     // Schema validation surfaced by runValidators.
     if (err.name === 'ValidationError') {
-        return res.status(400).json({ message: err.message });
+        return errorResponse(res, {
+            statusCode: 400,
+            code: 'VALIDATION_ERROR',
+            message: err.message,
+        });
     }
 
     // Malformed ObjectId in a path param.
     if (err.name === 'CastError') {
-        return res.status(400).json({ message: `Invalid value for ${err.path}` });
+        return errorResponse(res, {
+            statusCode: 400,
+            code: 'INVALID_ID',
+            message: `Invalid value for ${err.path}`,
+        });
     }
 
     const statusCode = err.statusCode || 500;
+    const isServerError = statusCode >= 500;
 
-    if (statusCode >= 500) {
+    if (isServerError) {
         // Stack traces stay server-side; the response carries a generic message only.
         logger.error('Unhandled error', {
             requestId: req.requestId,
@@ -113,10 +135,18 @@ app.use((err, req, res, next) => {
         });
     }
 
-    return res.status(statusCode).json({
-        ok: false,
-        message: statusCode >= 500 ? 'Internal server error' : err.message,
-        ...(err.details ? { details: err.details } : {}),
+    /*
+     * Every error leaves through errorResponse, so the body is always
+     * `{ ok, message, code, details? }`. Only an ApiError carries a trustworthy string
+     * code; a raw Mongo or driver error has a numeric `code`, which would collide with
+     * the API's own and is therefore ignored.
+     */
+    return errorResponse(res, {
+        statusCode,
+        // A 500's message can name internal state, so it is replaced wholesale.
+        message: isServerError ? 'Internal server error' : err.message,
+        code: typeof err.code === 'string' ? err.code : (isServerError ? 'INTERNAL_ERROR' : 'BAD_REQUEST'),
+        details: err.details,
     });
 });
 

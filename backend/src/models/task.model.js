@@ -84,6 +84,21 @@ const taskSchema = new mongoose.Schema({
         enum: TASK_STATUSES,
         default: 'pending'
     },
+    /*
+     * When this task first became `completed`.
+     *
+     * Required by the server-side streak, which counts the *days* a user completed
+     * something — without this the history would have to be inferred from `deadline`,
+     * which is a plan, not a record.
+     *
+     * Stamped once and never cleared, including when the task is reopened. That is what
+     * makes R-STREAK-8 work: un-completing a task does not decrement the streak, so the
+     * day it was finished has to survive being un-done. `status` remains the current
+     * state; `completedAt` is the immutable record of when it first happened.
+     */
+    completedAt: {
+        type: Date,
+    },
     deadline: {
         type: Date,
         required: true
@@ -190,5 +205,11 @@ taskSchema.index({ userId: 1, tags: 1 }, { background: true });
  */
 taskSchema.index({ userId: 1, projectId: 1 }, { background: true });
 taskSchema.index({ userId: 1, goalId: 1 }, { background: true });
+
+/*
+ * Backs the streak aggregation, which reads every completion date for a user and walks
+ * them backwards.
+ */
+taskSchema.index({ userId: 1, completedAt: -1 }, { background: true });
 
 module.exports = mongoose.model('Task', taskSchema);

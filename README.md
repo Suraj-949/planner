@@ -83,6 +83,11 @@ planner/
 │   │   └── BUSINESS-LOGIC.md
 │   ├── tests/                     # node:test suite — npm test
 │   │   ├── taskValidation.test.js
+│   │   ├── entityValidation.test.js   # goal/milestone/project/habit payloads
+│   │   ├── dates.test.js              # local calendar helpers + a DST matrix
+│   │   ├── recurrence.test.js         # rule advancement + missed-period collapse
+│   │   ├── streak.test.js             # R-STREAK-1..8 against the pure walk
+│   │   ├── habit.test.js              # R-HAB-1/2, cadence periods, completion rate
 │   │   ├── tokens.test.js
 │   │   ├── auth.middleware.test.js
 │   │   ├── csrf.test.js
@@ -97,10 +102,19 @@ planner/
 │       │                         # the validators so the two layers cannot drift
 │       ├── utils/
 │       │   ├── tokens.js         # JWT sign/verify, access vs refresh type separation, cookies
-│       │   ├── taskValidation.js  # Payload rules + local-noon deadline parsing
-│       │   ├── response.js       # { ok, data } envelope helpers
-│       │   ├── http.js           # ApiError + asyncHandler
+│       │   ├── taskValidation.js  # Task payload rules + local-noon deadline parsing
+│       │   ├── entityValidation.js# Goal/milestone/project/habit payload rules
+│       │   ├── dates.js          # Local calendar helpers — the one definition of a day
+│       │   ├── response.js       # { ok, data } envelope helpers + errorResponse
+│       │   ├── http.js           # ApiError + asyncHandler + buildUpdate
 │       │   └── logger.js         # Structured JSON logger with redaction
+│       ├── services/
+│       │   ├── streak.service.js     # Per-user streak derived from completedAt
+│       │   ├── habit.service.js      # Streaks over scheduled occurrences
+│       │   ├── recurrence.service.js # Advance a rule, materialise the next task
+│       │   ├── stats.service.js      # Dashboard aggregates, 0 not NaN when empty
+│       │   ├── goal.service.js       # Progress derived from milestones
+│       │   └── ownership.service.js  # The one place tenancy guards live
 │       ├── models/
 │       │   ├── user.model.js     # User schema
 │       │   ├── task.model.js     # Task schema + embedded subtasks/recurrence + indexes
@@ -111,10 +125,18 @@ planner/
 │       │   └── habitCompletion.model.js  # One row per habit per day
 │       ├── controllers/
 │       │   ├── auth.controller.js    # register, login, refreshToken, logout
-│       │   └── task.controller.js    # create, fetch, update, delete
+│       │   ├── task.controller.js    # create, fetch, stats, streak, update, delete
+│       │   ├── goal.controller.js    # CRUD + derived progress
+│       │   ├── milestone.controller.js # CRUD + complete/reopen
+│       │   ├── project.controller.js # CRUD + archive/restore
+│       │   └── habit.controller.js   # CRUD + tick + history
 │       ├── routes/
 │       │   ├── auth.routes.js    # /api/auth/*
-│       │   └── task.routes.js    # /api/tasks/*
+│       │   ├── task.routes.js    # /api/tasks/*
+│       │   ├── goal.routes.js    # /api/goals/*
+│       │   ├── milestone.routes.js # /api/milestones/*
+│       │   ├── project.routes.js # /api/projects/*
+│       │   └── habit.routes.js   # /api/habits/*
 │       ├── middleware/
 │       │   ├── auth.middleware.js     # Bearer token → req.user (RFC 7235 scheme)
 │       │   ├── rateLimit.middleware.js# auth + API limits
@@ -285,17 +307,92 @@ Base URL: `http://localhost:3000/api`
 | POST | `/auth/refresh-token` | — (cookie only) | `200` `{ message, accessToken }` |
 | POST | `/auth/logout` | — | `200` `{ message }`, clears refresh cookie |
 
-### Tasks — all four require a Bearer token
+### Tasks — all require a Bearer token
 
-| Method | Endpoint | Body | Response |
+| Method | Endpoint | Body / Query | Response |
 |---|---|---|---|
-| POST | `/tasks/create` | `{ title*, description, status?, deadline*, category?, priority? }` | `201` `{ message, task }` |
-| GET | `/tasks/fetch` | — | `200` `{ message, tasks[] }`, newest first |
-| PUT | `/tasks/update/:id` | `{ title*, deadline*, description?, status?, category?, priority? }` | `200` `{ message, task }` |
+| POST | `/tasks/create` | `{ title*, description, status?, deadline*, category?, priority?, tags?, subtasks?, recurrence?, projectId?, goalId?, estimateMinutes?, actualMinutes?, notes? }` | `201` `{ message, task }` |
+| GET | `/tasks/fetch` | `?q=&status=&priority=&category=&projectId=&goalId=&from=&to=&sort=&order=&page=&limit=` | `200` `{ message, tasks[], meta: { page, limit, total, pages } }` |
+| GET | `/tasks/stats` | `?projectId=&goalId=&from=&to=` | `200` `{ message, stats: { pending, in-progress, completed, total, overdue, completionRate } }` |
+| GET | `/tasks/streak` | — | `200` `{ message, streak, longestStreak }` |
+| PUT | `/tasks/update/:id` | any subset of the create body | `200` `{ message, task, nextTask? }` |
 | DELETE | `/tasks/delete/:id` | — | `200` `{ message, task }` |
 
-Queries are scoped per user from the verified token — no endpoint accepts a user id from
-the client. A task belonging to another user returns `404`.
+`q` searches title, description, notes, subtask titles and tags, case-insensitively.
+`sort` accepts `created`, `deadline` or `title`. `limit` is capped at 100. `nextTask` is
+returned only when a *recurring* task was just completed, and is the occurrence the
+scheduler created.
+
+`PUT /tasks/update/:id` with `{ status: "completed" }` stamps `completedAt`, which is what
+the streak counts. Re-saving a completed task does not move that timestamp.
+
+### Goals — all require a Bearer token
+
+| Method | Endpoint | Body / Query | Response |
+|---|---|---|---|
+| POST | `/goals/create` | `{ title*, description?, targetDate?, status? }` | `201` `{ message, goal }` |
+| GET | `/goals/fetch` | `?status=` | `200` `{ message, goals[] }`, each with derived `progress` |
+| GET | `/goals/fetch/:id` | — | `200` `{ message, goal }` |
+| PUT | `/goals/update/:id` | any subset | `200` `{ message, goal }` |
+| DELETE | `/goals/delete/:id` | — | `200` `{ message }`, removes the goal's milestones too |
+
+`progress` is `{ total, completed, percent }`, computed from the goal's milestones
+(R-GOAL-1). It is never stored, so it cannot disagree with the milestones it came from.
+
+### Milestones
+
+| Method | Endpoint | Body / Query | Response |
+|---|---|---|---|
+| POST | `/milestones/create` | `{ goalId*, title*, dueDate?, completedAt? }` | `201` `{ message, milestone }` |
+| GET | `/milestones/fetch` | `?goalId*` | `200` `{ message, milestones[] }` |
+| PUT | `/milestones/update/:id` | any subset | `200` `{ message, milestone }` |
+| PATCH | `/milestones/complete/:id` | `{ completed? }` | `200` `{ message, milestone }` |
+| DELETE | `/milestones/delete/:id` | — | `200` `{ message }` |
+
+A milestone carries no `userId` of its own; it is authorised through the goal that owns
+it, and cannot be moved to a different goal.
+
+### Projects
+
+| Method | Endpoint | Body / Query | Response |
+|---|---|---|---|
+| POST | `/projects/create` | `{ title*, description?, color?, goalId? }` | `201` `{ message, project }` |
+| GET | `/projects/fetch` | `?goalId=&archived=` | `200` `{ message, projects[] }`, each with `openTaskCount` |
+| PUT | `/projects/update/:id` | any subset | `200` `{ message, project }` |
+| PATCH | `/projects/archive/:id` | — | `200` `{ message, project }` |
+| PATCH | `/projects/restore/:id` | — | `200` `{ message, project }` |
+| DELETE | `/projects/delete/:id` | — | `200` `{ message }`, archives rather than deleting |
+
+`color` must be six-digit hex, e.g. `#4f46e5`. `openTaskCount` is derived from the tasks,
+never stored. Archived projects are hidden unless `archived=true`.
+
+### Habits
+
+| Method | Endpoint | Body / Query | Response |
+|---|---|---|---|
+| POST | `/habits/create` | `{ title*, cadence?, targetPerPeriod? }` | `201` `{ message, habit }` |
+| GET | `/habits/fetch` | `?archived=` | `200` `{ message, habits[] }`, each with streak and rate |
+| GET | `/habits/fetch/:id` | — | `200` `{ message, habit }` |
+| GET | `/habits/history/:id` | — | `200` `{ message, dates[] }` as local `YYYY-MM-DD` keys |
+| PUT | `/habits/update/:id` | any subset | `200` `{ message, habit }` |
+| POST | `/habits/tick/:id` | `{ date?, completed? }` | `200` `{ message, habit }` |
+| PATCH | `/habits/archive/:id` | — | `200` `{ message, habit }` |
+| PATCH | `/habits/restore/:id` | — | `200` `{ message, habit }` |
+| DELETE | `/habits/delete/:id` | — | `200` `{ message }`, removes its completions too |
+
+`cadence` is `daily`, `weekly` or `monthly`, and `targetPerPeriod` is how many times per
+that period counts as success (1–31). The streak counts consecutive **scheduled**
+occurrences met, not calendar days — so a "3x per week" habit is not broken by a missed
+Monday (R-HAB-1, R-HAB-2).
+
+Ticking is idempotent: ticking the same date twice creates one row, not two, enforced by
+a unique index on `(habitId, date)`.
+
+---
+
+All endpoints are scoped per user from the verified token — no endpoint accepts a user id
+from the client. A resource belonging to another user returns `404`, never `403`, so a
+valid id cannot be used to probe for someone else's data.
 
 ---
 

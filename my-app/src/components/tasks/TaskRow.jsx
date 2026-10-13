@@ -1,10 +1,13 @@
 import Badge from '../ui/Badge'
 import Checkbox from '../ui/Checkbox'
 import { STATUS_LABELS, STATUS_DOT } from '../../constants/taskMeta'
-import { Timer, Play, Check } from 'lucide-react'
+import { Timer, Play, Check, Pencil, Trash2 } from 'lucide-react'
 
+// The final 84px column is the actions cell. It was named in the header (COLUMNS ends with
+// an "Actions" label) but never given a width or a renderer, so the grid simply had no
+// room for the controls the design called for.
 const GRID =
-    'grid grid-cols-[28px_minmax(0,1fr)_84px_112px_128px] items-center gap-3'
+    'grid grid-cols-[28px_minmax(0,1fr)_84px_112px_128px_84px] items-center gap-3'
 
 // Column headings mirror GRID above; kept in one place so they can never drift.
 const COLUMNS = [
@@ -15,7 +18,7 @@ const COLUMNS = [
     { key: 'due', label: 'Due Date', className: '' },
 ]
 
-const TaskRow = ({ task, onToggle, onStartFocus }) => {
+const TaskRow = ({ task, onToggle, onStartFocus, onEdit, onDelete, canMutate = true }) => {
     const completed = task.status === 'completed'
     const focusing = task.status === 'in-progress'
 
@@ -91,6 +94,37 @@ const TaskRow = ({ task, onToggle, onStartFocus }) => {
                         <Check className="h-2.5 w-2.5" strokeWidth={3} />
                         Done
                     </span>
+                )}
+            </div>
+
+            {/*
+                Actions are withheld while the list is standing in for a failed request: the
+                rows are module-scope placeholders, so editing or deleting one would change
+                nothing server-side and would look like a silent no-op.
+            */}
+            <div className="flex items-center justify-end gap-0.5">
+                {canMutate && (
+                    <>
+                        <button
+                            type="button"
+                            onClick={() => onEdit(task)}
+                            aria-label={`Edit "${task.title}"`}
+                            title="Edit"
+                            className="rounded-control p-1.5 text-content-subtle transition-colors duration-100 hover:bg-surface-overlay hover:text-content"
+                        >
+                            <Pencil className="h-3.5 w-3.5" strokeWidth={1.8} />
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={() => onDelete(task)}
+                            aria-label={`Delete "${task.title}"`}
+                            title="Delete"
+                            className="rounded-control p-1.5 text-content-subtle transition-colors duration-100 hover:bg-danger-soft hover:text-danger"
+                        >
+                            <Trash2 className="h-3.5 w-3.5" strokeWidth={1.8} />
+                        </button>
+                    </>
                 )}
             </div>
         </div>

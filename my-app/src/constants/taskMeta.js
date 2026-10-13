@@ -86,4 +86,57 @@ export const STATUS_VARIANTS = {
 
 export const PROJECTS = ['Planner Core', 'Obsidian UI', 'Strategy 2025', 'Infrastructure']
 
-export const RECURRING_OPTIONS = ['None', 'Daily', 'Weekly', 'Monthly', 'Weekdays']
+/*
+ * Recurrence presets that map 1:1 onto the backend's `{ freq, interval, daysOfWeek }`
+ * rule. "Weekdays" used to sit in this list with no equivalent in the schema, so choosing
+ * it stored nothing at all — the field was decorative.
+ */
+export const RECURRING_OPTIONS = [
+    { value: 'none', label: 'None' },
+    { value: 'daily', label: 'Daily' },
+    { value: 'weekly', label: 'Weekly' },
+    { value: 'weekdays', label: 'Weekdays' },
+    { value: 'monthly', label: 'Monthly' },
+]
+
+export const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
+
+// Serialise the chosen preset into the rule the API stores, or undefined for none.
+export const toRecurrence = (preset, daysOfWeek) => {
+    if (!preset || preset === 'none') return undefined
+    if (preset === 'daily') return { freq: 'daily', interval: 1 }
+    if (preset === 'monthly') return { freq: 'monthly', interval: 1 }
+    if (preset === 'weekdays') return { freq: 'weekly', interval: 1, daysOfWeek: [1, 2, 3, 4, 5] }
+
+    if (preset === 'weekly') {
+        // A weekly rule naming no days is rejected server-side. Falling back to Monday
+        // rather than failing the save keeps the form usable without a second validation
+        // pass, and the user sees the chip they did not pick light up.
+        const days = Array.isArray(daysOfWeek) && daysOfWeek.length
+            ? [...daysOfWeek].sort((a, b) => a - b)
+            : [1]
+
+        return { freq: 'weekly', interval: 1, daysOfWeek: days }
+    }
+
+    return undefined
+}
+
+// Inverse, for repopulating the form when editing an existing task.
+export const fromRecurrence = (recurrence) => {
+    if (!recurrence) return { preset: 'none', daysOfWeek: [] }
+
+    const days = Array.isArray(recurrence.daysOfWeek) ? recurrence.daysOfWeek : []
+
+    if (recurrence.freq === 'monthly') return { preset: 'monthly', daysOfWeek: [] }
+    if (recurrence.freq === 'daily') return { preset: 'daily', daysOfWeek: [] }
+
+    if (recurrence.freq === 'weekly') {
+        const isWeekdays =
+            days.length === 5 && [1, 2, 3, 4, 5].every((day) => days.includes(day))
+
+        return { preset: isWeekdays ? 'weekdays' : 'weekly', daysOfWeek: days }
+    }
+
+    return { preset: 'none', daysOfWeek: [] }
+}

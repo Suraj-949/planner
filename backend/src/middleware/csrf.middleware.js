@@ -22,6 +22,8 @@
  *    that strip the header. `sameSite: 'lax'` is the backstop in that case.
  */
 
+const { errorResponse } = require('../utils/response');
+
 const ALLOWED_ORIGINS = (
     process.env.CORS_ORIGINS || 'http://localhost:5173,http://127.0.0.1:5173'
 )
@@ -50,13 +52,21 @@ function csrfGuard(req, res, next) {
     const { origin, referer } = req.headers;
 
     if (origin && !originAllowed(origin)) {
-        return res.status(403).json({ ok: false, message: 'Request origin is not allowed' });
+        return errorResponse(res, {
+            statusCode: 403,
+            code: 'ORIGIN_NOT_ALLOWED',
+            message: 'Request origin is not allowed',
+        });
     }
 
     // No Origin header — fall back to Referer, which a browser also cannot forge
     // cross-site.
     if (!origin && referer && !originAllowed(referer)) {
-        return res.status(403).json({ ok: false, message: 'Request origin is not allowed' });
+        return errorResponse(res, {
+            statusCode: 403,
+            code: 'ORIGIN_NOT_ALLOWED',
+            message: 'Request origin is not allowed',
+        });
     }
 
     return next();

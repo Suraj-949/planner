@@ -18,23 +18,37 @@ Already built and working — **do not rebuild**:
 - Axios response interceptor with automatic 401 refresh and request replay
 - Express + Mongoose CRUD layers (controller / route / model)
 - bcrypt register + login
-- Task CRUD with status, priority, category, deadline
-- Task update modal, delete action, toasts
+- Task CRUD with status, priority, category, deadline, subtasks, tags, notes,
+  estimate vs actual, and project/goal links
+- Task update modal, delete action, toasts; edit and delete are wired into `TasksPage`
 - Progress tracker (per-status counts + completion rate)
-- Streak counter (`updateStreak.js`, localStorage)
 - Derived reminder badges: Overdue / Due Today / Due Tomorrow
 - Pomodoro timer (25/5) that survives page reload via stored epoch
 - Tailwind CSS 4 + lucide-react + React Router 7
 
-Not yet present: time tracking UI, search/filter, pagination, server-side analytics, habit
-tracking UI, database-backed streak.
+Phase 2 backend — **built and tested, not yet surfaced in the UI**:
 
-Present as **schema and validation only** — storage landed in 2.1, the behaviour that uses
-it is 2.2 and 2.4: subtasks (embedded in `Task`), `Task` ↔ project/goal links, recurrence
-rules, habits and habit completions, and the goal/milestone/project collections.
+- Goals, milestones, projects, habits and habit completions, each with a CRUD API under
+  `/api/goals`, `/api/milestones`, `/api/projects`, `/api/habits`
+- Server-side streak per user, derived from `Task.completedAt` and exposed at
+  `/api/tasks/streak`. The legacy `updateStreak.js` localStorage counter still exists on
+  the pre-redesign timer route and is not authoritative
+- Recurrence: completing a recurring task materialises the next occurrence, collapsing
+  missed periods into one instance
+- Habit streaks over scheduled occurrences, so a "3x per week" habit survives a missed
+  Monday
+- Dashboard aggregates at `/api/tasks/stats`, with goal progress derived from milestones
+- Server-side search, filtering, sorting and pagination on `getTasks`
+
+Not yet present: time tracking UI, habit tracking UI, and the Phase 2.4 frontend pages
+(task detail, projects, goals, habits, planner, calendar).
+
+Present but not yet complete: the legacy `/create-task` and `/timer` routes still carry
+their own copies of the edit, delete and streak logic, and remain outside the redesigned
+task screen.
 
 Also already true, though listed nowhere above: multi-tenancy (`userId` on every owned
-document) and an automated test suite (109 tests, `node:test` only).
+document) and an automated test suite (190 tests, `node:test` only).
 
 ---
 
@@ -105,7 +119,7 @@ which JavaScript parses as **UTC** midnight, but reminder and streak logic norma
 - ✅ `start` and `test` scripts in `backend/package.json`
 - ✅ `.env.example` for both packages
 - ✅ Root `package.json` with npm workspaces + `concurrently` to run both apps
-Structured JSON logger replacing `console.log`, with redaction
+- ✅ Structured JSON logger replacing `console.log`, with redaction
 - ✅ Request ID middleware
 - ✅ Seed script with sample data
 
@@ -192,23 +206,64 @@ derive goal progress are 2.2.
 
 ### 2.2 Backend Services
 
-- `services/recurrence.service.js` — materialise the next occurrence when a recurring
-  task is completed; handle missed occurrences
-- `services/habit.service.js` — current streak, longest streak, completion rate
-- `services/stats.service.js` — dashboard aggregates
-- `services/streak.service.js` — **move the streak out of localStorage and into the
-  database, scoped per user.** This is the single biggest correctness upgrade in this phase
-- `utils/validators.js` — shared, schema-aligned validation
+✅ **Done.** All four services exist, plus the domain APIs and the ownership guards they
+share. The streak is now derived from the database and scoped per user.
+
+- `services/recurrence.service.js` — advances a deadline by one period and materialises
+  the next occurrence when a recurring task completes. Missed occurrences collapse into a
+  single instance with the next non-overdue date (R-RECUR-2) rather than spawning one
+  overdue copy per skipped period
+- `services/streak.service.js` — **the streak moved out of localStorage and into the
+  database, scoped per user.** The stored counter violated R-STREAK-7 outright: it was not
+  scoped to a user, so two people sharing a browser inherited each other's streak and it
+  survived logout. It also could not be recomputed, which invariant I-10 requires
+- `services/habit.service.js` — current streak, longest streak and completion rate over
+  *scheduled* occurrences (R-HAB-1), so a "3x per week" habit is not broken by a missed
+  Monday (R-HAB-2)
+- `services/stats.service.js` — dashboard aggregates. An empty dataset yields 0, never NaN
+  or null (I-7), and every number is recomputable from source records (I-10)
+- `services/goal.service.js` — goal progress derived from milestones (R-GOAL-1), never
+  stored
+- `services/ownership.service.js` — one place the per-user tenancy guards live, so a
+  hand-rolled `findOne({ _id, userId })` cannot be copied into a new controller with the
+  `userId` clause missing
+- `utils/entityValidation.js` — validators for Goal, Milestone, Project and Habit,
+  sharing `parseCalendarDate` with the task validator so a milestone due date is anchored
+  at local noon exactly the way a deadline is
+- `utils/dates.js` — the server's calendar helpers, shared by the streak, the habit
+  cadence and the recurrence so all three agree on where a day ends
+
+Domain APIs mounted: `/api/goals`, `/api/milestones`, `/api/projects`, `/api/habits`,
+plus `/api/tasks/stats` and `/api/tasks/streak`.
 
 ### 2.3 Query Capabilities
 
-- Search across title, description, and notes
-- Filter by status, priority, category, tag, project, goal, date range
-- Sort by deadline, priority, date created, status
-- Pagination — the task list is unbounded today
-- Include subtask counts in list responses
+🟡 **Partial.** Server-side filtering, search, sorting and pagination are in place on
+`getTasks`; the client no longer downloads the whole collection to render a page.
+
+- ✅ Search across title, description, notes, subtask titles and tags — case-insensitive
+  substring, with the term escaped before it is compiled
+- ✅ Filter by status, priority, category, project, goal and deadline range
+- ✅ Sort by deadline, date created and title, with `_id` as a tiebreaker so paging is
+  stable
+- ✅ Pagination — `page` / `limit`, capped at 100, returning `meta: { page, limit, total, pages }`
+- ✅ Streak and stats endpoints, so the dashboard is no longer computed client-side
+- ⬜ Filter by tag — the field is indexed and searchable but has no dedicated query param
+- ⬜ Sort by priority — deliberately absent: its values are the strings 'high', 'medium'
+  and 'low', which sort alphabetically as high < low < medium, so a priority sort would
+  look correct and not be. Ranking it needs an aggregation with a `$switch`
+- ⬜ Subtask counts in list responses
 
 ### 2.4 Frontend Pages
+
+🟡 **Partial.** `TasksPage` is the redesigned dashboard: search, filter bar, status/priority
+selectors, create panel (now also editing), row actions, and separate loading / empty /
+error states. It reuses the authenticated shell, header and shared UI primitives.
+
+Still missing: real stats, task detail, projects, goals, habits, planner and calendar.
+The board and calendar view switches render a placeholder message. The legacy
+`/create-task` and `/timer` routes still serve the pre-redesign components, so their edit,
+delete and streak logic is not part of the main task screen.
 
 | Page | Purpose |
 |---|---|
@@ -222,6 +277,11 @@ derive goal progress are 2.2.
 | `Habits` | Habit list with streak badges |
 
 ### 2.5 Frontend Infrastructure
+
+🟡 **Partial.** `layouts/` (Sidebar, Header), the shared UI library (Button, Input, Badge,
+Notice, Checkbox, and now Modal and ConfirmDialog), and the auth context exist. The
+API-per-domain `services/` layer and the `useTasks` / `useGoals` / `useHabits` hooks do not
+— components call `axiosInstance` directly.
 
 - `layouts/` — authenticated shell with sidebar and header
 - `services/` — one API module per domain (`taskService.js`, `goalService.js`)
@@ -377,17 +437,24 @@ read the other's workspace data.
 
 Applies across all phases. Do not defer past Phase 2.
 
-- ⬜ **Root workspace** — one `package.json`, `concurrently` dev script
-- ⬜ **Shared enums** — `status`, `priority`, `category` currently declared in five places
-    (schema, three validators, two JSX files). Move to one shared module
+- ✅ **Root workspace** — one `package.json`, `concurrently` dev script
+- ✅ **Shared enums** — backend values live once in `backend/src/constants/index.js` and are
+  imported by both `task.model.js` and `taskValidation.js`. The frontend still declares its
+  own copy in `my-app/src/constants/taskMeta.js`, which cannot import the backend's module
+  across the package boundary; it stays a hand-maintained mirror
 - ⬜ **Input validation library** — replace hand-rolled validators with zod or joi
 - ⬜ **API versioning** — `/api/v1/...`
 - ⬜ **OpenAPI docs** — generated from route definitions
-- ⬜ **Pagination convention** — consistent `limit` / `offset` / cursor everywhere
-- ⬜ **Error envelope** — one shape for all errors, with a machine-readable `code`
+- 🟡 **Pagination convention** — `page` / `limit` with a `meta` block is in place on
+  `getTasks` (2.3); the other list endpoints still return unbounded results, and cursor
+  paging is not adopted anywhere
+- ✅ **Error envelope** — one shape for all errors, with a machine-readable `code`.
+  `utils/response.errorResponse()` is the only place an error body is built, and every
+  site goes through it
 - ⬜ **Feature flags** — gate AI, gamification, and SaaS work
-- ⬜ **Feature-level tests** — each phase ships with its own test coverage
-- ⬜ **CI** — lint, test, build on every push
+- 🟡 **Feature-level tests** — 190 backend tests; the frontend has lint and a build check
+  but no tests, so client-side correctness is unguarded
+- ✅ **CI** — lint, test, build, audit, and a Docker smoke test on every push
 
 ---
 
@@ -396,15 +463,15 @@ Applies across all phases. Do not defer past Phase 2.
 Resolve these before the phase that depends on them. Each one is a fork that is expensive
 to reverse later.
 
-| Decision | Options | Needed by | Recommendation |
+| Decision | Options | Needed by | Outcome |
 |---|---|---|---|
-| Subtask storage | Embedded array vs own collection | Phase 2 | Embed in `Task`. Simpler queries, subtasks are always read with their parent. Split later if subtasks need independent routing. |
-| Recurrence format | Custom `{freq, interval, days}` vs RRULE string | Phase 2 | Custom object. An RRULE parser is a dependency and most users need a fraction of the spec. |
-| Streak storage | LocalStorage vs database | Phase 2 | Database, per user. LocalStorage is already wrong across shared devices. |
-| Analytics execution | Mongo aggregation pipelines vs app-side JS | Phase 3 | Aggregation pipelines. Data volume will outgrow in-memory processing. |
-| Auth scope for Phase 5 | Add `workspaceId` early vs migrate later | Phase 5 | **Add early.** Retrofitting a tenant column across every model and query is the most expensive mistake in this roadmap. |
-| AI provider | Managed API vs self-hosted | Phase 4 | Managed API behind a thin interface, so the provider is swappable. |
-| Validation library | Zod vs Joi vs hand-rolled | Phase 2 | Zod. Shares types with the TypeScript migration (Phase 6). |
+| Subtask storage | Embedded array vs own collection | Phase 2 | **Resolved — embedded in `Task`.** Simpler queries; subtasks are always read with their parent. Split later if subtasks need independent routing. `parentId` is therefore not needed |
+| Recurrence format | Custom `{freq, interval, days}` vs RRULE string | Phase 2 | **Resolved — custom object.** An RRULE parser is a dependency and most users need a fraction of the spec |
+| Streak storage | LocalStorage vs database | Phase 2 | **Resolved — database, per user.** Landed in 2.2. The localStorage counter was not scoped to a user, so it survived logout and was shared across accounts on one browser, and it could not be recomputed (I-10). Now derived from `Task.completedAt` |
+| Analytics execution | Mongo aggregation pipelines vs app-side JS | Phase 3 | **Decided — aggregation pipelines.** Data volume will outgrow in-memory processing |
+| Auth scope for Phase 5 | Add `workspaceId` early vs migrate later | Phase 5 | **Decided — add early.** Retrofitting a tenant column across every model and query is the most expensive mistake in this roadmap |
+| AI provider | Managed API vs self-hosted | Phase 4 | **Decided — managed API behind a thin interface**, so the provider is swappable |
+| Validation library | Zod vs Joi vs hand-rolled | Phase 2 | **Partially resolved — hand-rolled, with the duplication removed.** `taskValidation.js` and the new `entityValidation.js` both import their enums and limits from `src/constants`, and share `parseCalendarDate`, so the schema and the validators cannot drift. Zod is still deferred: the TypeScript migration in Phase 6 will want it, and adopting it now would rewrite working validators for no user-visible gain |
 
 ---
 

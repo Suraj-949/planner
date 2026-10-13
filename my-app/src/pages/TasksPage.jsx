@@ -3,11 +3,13 @@ import Header from '../components/layout/Header'
 import Sidebar from '../components/layout/Sidebar'
 import Filters from '../components/tasks/Filters'
 import TaskList from '../components/tasks/TaskList'
-import CreateTaskPanel from '../components/tasks/CreateTaskPanel'
+import TaskFormPanel from '../components/tasks/TaskFormPanel'
+import ConfirmDialog from '../components/ui/ConfirmDialog'
 import Notice from '../components/ui/Notice'
 import { SEED } from '../data/seedTasks'
 import { filterTasks } from '../utils/filterTasks'
 import { matchTaskId, toViewTasks, formatTotal, parseEstimate } from '../utils/taskAdapter'
+import { toRecurrence } from '../constants/taskMeta'
 import axiosInstance from '../axiosInstance'
 import { useAuth } from '../hooks/useAuth'
 import { LoaderCircle } from 'lucide-react'
@@ -44,6 +46,9 @@ const TasksPage = () => {
 
     const [view, setView] = useState('list')
     const [panelOpen, setPanelOpen] = useState(true)
+    const [panelMode, setPanelMode] = useState('create')
+    const [editingTask, setEditingTask] = useState(null)
+    const [pendingDelete, setPendingDelete] = useState(null)
     const [navOpen, setNavOpen] = useState(false)
     const [activeNav, setActiveNav] = useState('tasks')
 
@@ -127,53 +132,163 @@ const TasksPage = () => {
     const isPlaceholder = source === 'error'
     const isEmpty = source === 'empty'
 
+    const showError = useCallback((error, fallback) => {
+        setNotice({
+            tone: 'danger',
+            title: fallback.title,
+            body: error.response?.data?.message ?? fallback.body,
+        })
+    }, [])
+
+    /*
+     * Writes a change to the server and reloads, so the list shows what was stored rather
+     * than what was optimistically assumed.
+     *
+     * This is the handler the dashboard was missing. `toggleAndPersist` used to flip the
+     * row in React state and then call `fetchTasks()` without ever sending the update, so
+     * completing a task on this page reappeared as incomplete on the next load — the
+     * optimistic state made it look like it had worked.
+     */
+    const patchTask = useCallback(
+        async (id, patch, fallback) => {
+            if (source !== 'live') return
+
+            try {
+                await axiosInstance.put(`/tasks/update/${id}`, patch)
+                await fetchTasks()
+            } catch (error) {
+                // Not rolled back by hand: reloading restores whatever the server actually
+                // holds, which by definition cannot disagree with reality.
+                await fetchTasks()
+                showError(error, fallback)
+            }
+        },
+        [source, fetchTasks, showError]
+    )
+
     const toggleAndPersist = useCallback(
         async (id) => {
             if (source !== 'live') return
 
-            setTasks((current) =>
-                current.map((task) =>
-                    matchTaskId(task, id)
-                        ? { ...task, status: task.status === 'completed' ? 'pending' : 'completed' }
-                        : task
-                )
+            const current = tasks.find((task) => matchTaskId(task, id))
+
+            if (!current) return
+
+            const next = current.status === 'completed' ? 'pending' : 'completed'
+
+            // Optimistic so the checkbox responds on the same frame; the request below
+            // makes it true. Without it the row flips and then flips back on reload.
+            setTasks((list) =>
+                list.map((task) => (matchTaskId(task, id) ? { ...task, status: next } : task))
             )
 
-            await fetchTasks()
+            await patchTask(
+                id,
+                { status: next },
+                {
+                    title: next === 'completed' ? 'Could not complete the task' : 'Could not reopen the task',
+                    body: 'The change was not saved, so the list was reloaded from the server.',
+                }
+            )
         },
-        [source, fetchTasks]
+        [source, tasks, patchTask]
     )
 
-    // Starting focus is modelled as the in-progress state; the real implementation
-    // hands off to the pomodoro timer and records the session.
-    const startFocus = (id) =>
-        setTasks((current) =>
-            current.map((task) => (matchTaskId(task, id) ? { ...task, status: 'in-progress' } : task))
-        )
+    /*
+     * Starting focus is modelled as the in-progress state and is now persisted, so the
+     * status survives a reload. Recording the session itself belongs to Phase 3.
+     */
+    const startFocus = useCallback(
+        async (id) => {
+            if (source !== 'live') return
 
-    const createTask = async (draft) => {
+            const current = tasks.find((task) => matchTaskId(task, id))
+
+            if (!current || current.status === 'completed') return
+
+            setTasks((list) =>
+                list.map((task) => (matchTaskId(task, id) ? { ...task, status: 'in-progress' } : task))
+            )
+
+            await patchTask(
+                id,
+                { status: 'in-progress' },
+                {
+                    title: 'Could not start focus',
+                    body: 'The status was not saved, so the list was reloaded from the server.',
+                }
+            )
+        },
+        [source, tasks, patchTask]
+    )
+
+    const openCreate = () => {
+        setEditingTask(null)
+        setPanelMode('create')
+        setPanelOpen(true)
+    }
+
+    const openEdit = (task) => {
+        setEditingTask(task)
+        setPanelMode('edit')
+        setPanelOpen(true)
+    }
+
+    const submitDraft = async (draft) => {
         if (isPlaceholder) return
 
+        const recurrence = toRecurrence(draft.recurring, draft.daysOfWeek)
+
+        const payload = {
+            title: draft.title,
+            description: draft.description,
+            notes: draft.notes,
+            priority: draft.priority,
+            deadline: draft.deadline,
+            context: draft.context,
+            estimateMinutes: parseEstimate(draft.estimate),
+            subtasks: draft.subtasks ?? [],
+            // An omitted key means "leave unchanged" on a partial update, so clearing the
+            // recurrence has to send null rather than nothing.
+            recurrence: recurrence ?? null,
+        }
+
+        const isEdit = panelMode === 'edit'
+
         try {
-            await axiosInstance.post('/tasks/create', {
-                title: draft.title,
-                description: draft.description,
-                priority: draft.priority,
-                deadline: draft.deadline,
-                context: draft.project,
-                // The panel collects "1h 45m"; the API stores minutes (R-TASK-13), so the
-                // string is parsed here rather than sent through as-is.
-                estimateMinutes: parseEstimate(draft.estimate),
-                subtasks: draft.subtasks ?? [],
-            })
+            if (isEdit && editingTask) {
+                await axiosInstance.put(`/tasks/update/${editingTask.id}`, payload)
+            } else {
+                await axiosInstance.post('/tasks/create', payload)
+            }
 
             setPanelOpen(false)
+            setPanelMode('create')
+            setEditingTask(null)
             await fetchTasks()
         } catch (error) {
             setNotice({
                 tone: 'danger',
-                title: 'Could not create the task',
+                title: isEdit ? 'Could not save the changes' : 'Could not create the task',
                 body: error.response?.data?.message ?? 'The server rejected the request.',
+            })
+        }
+    }
+
+    const deleteTask = async () => {
+        const target = pendingDelete
+
+        if (!target) return
+
+        try {
+            await axiosInstance.delete(`/tasks/delete/${target.id}`)
+            setPendingDelete(null)
+            await fetchTasks()
+        } catch (error) {
+            setPendingDelete(null)
+            showError(error, {
+                title: 'Could not delete the task',
+                body: 'Nothing was removed, so the list was reloaded from the server.',
             })
         }
     }
@@ -238,7 +353,7 @@ const TasksPage = () => {
 
             {/* Main column */}
             <div className="flex min-w-0 flex-1 flex-col">
-                <Header onOpenCreate={() => setPanelOpen(true)} onOpenNav={() => setNavOpen(true)} />
+                <Header onOpenCreate={openCreate} onOpenNav={() => setNavOpen(true)} />
 
                 {/* Row wraps below xl so the create panel stacks under the task list. */}
                 <div className="flex min-h-0 flex-1 flex-wrap overflow-y-auto">
@@ -293,7 +408,7 @@ const TasksPage = () => {
                             onCategoryChange={setFilterFromEvent('category')}
                             dueDate={filters.dueDate}
                             onDueDateChange={setFilterFromEvent('dueDate')}
-                            onNewTask={() => setPanelOpen(true)}
+                            onNewTask={openCreate}
                             counts={counts}
                         />
 
@@ -313,7 +428,7 @@ const TasksPage = () => {
                                     </p>
                                     <button
                                         type="button"
-                                        onClick={() => setPanelOpen(true)}
+                                        onClick={openCreate}
                                         className="mt-4 inline-flex h-8 items-center gap-1.5 rounded-control bg-primary px-3.5 text-xs font-semibold text-primary-contrast transition hover:bg-primary-hover active:bg-primary-active"
                                     >
                                         Create your first task
@@ -329,6 +444,9 @@ const TasksPage = () => {
                                     completedTasks={completedTasks}
                                     onToggle={toggleAndPersist}
                                     onStartFocus={isPlaceholder ? undefined : startFocus}
+                                    onEdit={openEdit}
+                                    onDelete={setPendingDelete}
+                                    canMutate={!isPlaceholder}
                                     footer={{
                                         // Derived from estimateMinutes (R-TASK-13), which is
                                         // why the API stores minutes rather than "1h 30m".
@@ -357,14 +475,41 @@ const TasksPage = () => {
                     */}
                     {panelOpen && !isPlaceholder && (
                         <div className="w-full shrink-0 border-t border-border xl:w-[268px] xl:border-t-0 xl:border-l">
-                            <CreateTaskPanel
-                                onClose={() => setPanelOpen(false)}
-                                onCreate={createTask}
+                            {/*
+                                Keyed on the task being edited so switching from one task to
+                                another, or from edit back to create, re-runs the panel's
+                                initial-state hook. Without it the form keeps showing the
+                                previous task's fields.
+                            */}
+                            <TaskFormPanel
+                                key={panelMode === 'edit' ? `edit-${editingTask?.id}` : 'create'}
+                                mode={panelMode}
+                                initialTask={editingTask}
+                                onClose={() => {
+                                    setPanelOpen(false)
+                                    setPanelMode('create')
+                                    setEditingTask(null)
+                                }}
+                                onSubmit={submitDraft}
                             />
                         </div>
                     )}
                 </div>
             </div>
+
+            <ConfirmDialog
+                // Keyed on the target so switching tasks remounts the dialog and its
+                // pending state starts over.
+                key={pendingDelete?.id ?? 'confirm-none'}
+                open={Boolean(pendingDelete)}
+                title="Delete this task?"
+                confirmLabel="Delete"
+                onConfirm={deleteTask}
+                onCancel={() => setPendingDelete(null)}
+            >
+                <span className="font-medium text-content">&ldquo;{pendingDelete?.title}&rdquo;</span> will
+                be permanently removed, along with its subtasks. This cannot be undone.
+            </ConfirmDialog>
         </div>
     )
 }
