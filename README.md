@@ -5,10 +5,11 @@ a Pomodoro timer. Built as a two-package repo: an Express + MongoDB REST API and
 React single-page client.
 
 > **Status note**
-> The codebase is a to-do app. It is planned to grow into a productivity and execution
-> platform — see [`ROADMAP.md`](./ROADMAP.md). Nothing in the roadmap has been implemented
-> yet beyond the Phase 1 security and correctness work. This README documents the code that
-> actually exists.
+> Phase 1 infrastructure and Phase 2.1 data models are implemented. The current task page
+> supports creation, persisted completion, editing, confirmed deletion and client-side filters.
+> Focus actions mark the task in progress and open the existing localStorage timer; they do
+> not record task-linked sessions. Goals, projects, habits and recurrence behavior remain
+> planned work — see [`ROADMAP.md`](./ROADMAP.md).
 
 ## Documentation
 
@@ -238,7 +239,7 @@ not mind before running it.
 ### Verify
 
 ```bash
-npm run verify    # lint + test + build
+npm run verify    # lint + frontend/backend tests + build
 ```
 
 The backend suite needs no database — controllers run against an in-memory MongoDB.
@@ -457,6 +458,27 @@ Create, update, and delete each surface a banner that auto-clears after three se
 
 ---
 
+## Regression checks
+
+From the repository root:
+
+```bash
+npm ci --ignore-scripts
+npm run lint
+npm run test --workspace my-app   # Vitest + Testing Library task workflow regressions
+npm run test --workspace backend # node:test, including real MongoDB controller/model tests
+npm run build
+npm audit --audit-level=high
+```
+
+Backend database tests download a MongoDB binary through `mongodb-memory-server` on first
+use. If the download host is unavailable, configure `MONGOMS_SYSTEM_BINARY` with a compatible
+local `mongod` executable, or run the suite in CI with download access. A download/setup
+failure does not establish an application regression and must not be reported as a green suite.
+
+All API errors now use `{ ok: false, code, message, details? }`; success responses retain
+`{ ok: true, data }`. Database validation and malformed JSON details are not exposed.
+
 ## ⚠️ Known Issues
 
 Full detail in [`DOMAIN.md` §5](./DOMAIN.md) and
@@ -478,10 +500,10 @@ Full detail in [`DOMAIN.md` §5](./DOMAIN.md) and
 - No refresh token rotation or reuse detection
 - Streak and progress statistics are client-side only
 - No pagination — the task list is unbounded
-- No tests for controllers
-- No `helmet` or rate limiting on auth routes
 - Deadline storage uses a noon anchor rather than a dedicated date type
-- Hardcoded CORS origin — not deployable to another frontend host without editing source
+- Goal/project/habit management APIs and pages are not implemented
+- Board/calendar views are placeholders; recurring task scheduling is disabled in the create panel
+- Frontend and backend enums are centralized separately, not yet shared across packages
 
 ---
 

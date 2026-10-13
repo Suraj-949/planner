@@ -1,13 +1,13 @@
 import Button from '../ui/Button'
 import { Bell, CalendarDays, Menu, Plus, Search } from 'lucide-react'
-import { REFERENCE_DATE, formatToday } from '../../utils/dates'
+import { formatToday } from '../../utils/dates'
 
 const Header = ({
-    date = REFERENCE_DATE,
+    date = new Date(),
     onOpenCreate,
     onOpenNav,
     onOpenCommand,
-    hasNotifications = true,
+    hasNotifications = false,
 }) => {
     return (
         <header className="flex h-12 shrink-0 items-center gap-3 border-b border-border bg-surface px-3">

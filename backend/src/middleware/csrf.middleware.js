@@ -1,3 +1,4 @@
+const { fail } = require('../utils/response');
 /*
  * CSRF guard for cookie-authenticated state-changing requests.
  *
@@ -50,13 +51,13 @@ function csrfGuard(req, res, next) {
     const { origin, referer } = req.headers;
 
     if (origin && !originAllowed(origin)) {
-        return res.status(403).json({ ok: false, message: 'Request origin is not allowed' });
+        return fail(res, 403, 'Request origin is not allowed');
     }
 
     // No Origin header — fall back to Referer, which a browser also cannot forge
     // cross-site.
     if (!origin && referer && !originAllowed(referer)) {
-        return res.status(403).json({ ok: false, message: 'Request origin is not allowed' });
+        return fail(res, 403, 'Request origin is not allowed');
     }
 
     return next();

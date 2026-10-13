@@ -1,4 +1,4 @@
-﻿const userModel = require('../models/user.model');
+const userModel = require('../models/user.model');
 const bcrypt = require('bcrypt');
 const {
     signAccessToken,
@@ -8,7 +8,7 @@ const {
     clearRefreshCookie,
 } = require('../utils/tokens');
 const { logger } = require('../utils/logger');
-const { ok, created } = require('../utils/response');
+const { ok, created, fail } = require('../utils/response');
 
 const BCRYPT_SALT_ROUNDS = 10;
 const MIN_PASSWORD_LENGTH = 8;
@@ -70,7 +70,7 @@ async function register(req, res) {
 
         const validationError = validateRegistrationFields({ username, email, password });
         if (validationError) {
-            return res.status(400).json({ ok: false, message: validationError });
+            return fail(res, 400, validationError);
         }
 
         const normalisedUsername = username.trim();
@@ -83,7 +83,7 @@ async function register(req, res) {
         if (existingUser) {
             const field = existingUser.email === normalisedEmail ? 'email' : 'username';
 
-            return res.status(400).json({ ok: false, message: `An account with this ${field} already exists` });
+            return fail(res, 400, `An account with this ${field} already exists`);
         }
 
         const hashedPassword = await bcrypt.hash(password, BCRYPT_SALT_ROUNDS);
@@ -99,11 +99,11 @@ async function register(req, res) {
     } catch (err) {
         // A concurrent request can still win the race and trip the unique index.
         if (err.code === 11000) {
-            return res.status(400).json({ ok: false, message: 'Username or email already exists' });
+            return fail(res, 400, 'Username or email already exists');
         }
 
         logger.error('Register error', { error: err.message });
-        return res.status(500).json({ ok: false, message: 'Registration failed' });
+        return fail(res, 500, 'Registration failed');
     }
 }
 
@@ -112,11 +112,11 @@ async function login(req, res) {
         const { username, password } = req.body;
 
         if (!username || !password) {
-            return res.status(400).json({ ok: false, message: 'Username or email and password are required' });
+            return fail(res, 400, 'Username or email and password are required');
         }
 
         if (typeof username !== 'string' || typeof password !== 'string') {
-            return res.status(400).json({ ok: false, message: 'Username or email and password are required' });
+            return fail(res, 400, 'Username or email and password are required');
         }
 
         const identifier = username.trim();
@@ -130,19 +130,19 @@ async function login(req, res) {
             .select('+password');
 
         if (!user) {
-            return res.status(401).json({ ok: false, message: INVALID_CREDENTIALS });
+            return fail(res, 401, INVALID_CREDENTIALS);
         }
 
         const isMatch = await bcrypt.compare(password, user.password);
 
         if (!isMatch) {
-            return res.status(401).json({ ok: false, message: INVALID_CREDENTIALS });
+            return fail(res, 401, INVALID_CREDENTIALS);
         }
 
         return issueSession(res, user, 200, 'Login successful');
     } catch (err) {
         logger.error('Login error', { error: err.message });
-        return res.status(500).json({ ok: false, message: 'Login failed' });
+        return fail(res, 500, 'Login failed');
     }
 }
 
@@ -150,7 +150,7 @@ async function refreshToken(req, res) {
     const existingToken = req.cookies?.refreshToken;
 
     if (!existingToken) {
-        return res.status(401).json({ ok: false, message: 'Refresh token not found' });
+        return fail(res, 401, 'Refresh token not found');
     }
 
     try {
@@ -159,7 +159,7 @@ async function refreshToken(req, res) {
 
         if (!user) {
             clearRefreshCookie(res);
-            return res.status(401).json({ ok: false, message: 'Refresh token is no longer valid' });
+            return fail(res, 401, 'Refresh token is no longer valid');
         }
 
         return ok(res, 200, {
@@ -170,7 +170,7 @@ async function refreshToken(req, res) {
         clearRefreshCookie(res);
         logger.error('Refresh token error', { error: err.message });
 
-        return res.status(401).json({ ok: false, message: 'Failed to refresh token' });
+        return fail(res, 401, 'Failed to refresh token');
     }
 }
 

@@ -147,11 +147,11 @@ const Filters = ({
                         <option value="low">Low</option>
                     </select>
 
-                    <span className="label-xs">Project</span>
+                    <span className="label-xs">Context</span>
                     <select
                         value={category}
                         onChange={(event) => onCategoryChange(event.target.value)}
-                        aria-label="Filter by project"
+                        aria-label="Filter by context"
                         className={SELECT_CLASS}
                     >
                         <option value="all">All</option>

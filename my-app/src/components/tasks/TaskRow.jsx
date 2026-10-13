@@ -1,10 +1,10 @@
 import Badge from '../ui/Badge'
 import Checkbox from '../ui/Checkbox'
 import { STATUS_LABELS, STATUS_DOT } from '../../constants/taskMeta'
-import { Timer, Play, Check } from 'lucide-react'
+import { Timer, Play, Check, Pencil, Trash2 } from 'lucide-react'
 
 const GRID =
-    'grid grid-cols-[28px_minmax(0,1fr)_84px_112px_128px] items-center gap-3'
+    'grid min-w-[700px] grid-cols-[28px_minmax(0,1fr)_84px_112px_128px_64px] items-center gap-3'
 
 // Column headings mirror GRID above; kept in one place so they can never drift.
 const COLUMNS = [
@@ -13,11 +13,11 @@ const COLUMNS = [
     { key: 'priority', label: 'Priority', className: '' },
     { key: 'status', label: 'Status', className: '' },
     { key: 'due', label: 'Due Date', className: '' },
+    { key: 'actions', label: 'Actions', className: '' },
 ]
 
-const TaskRow = ({ task, onToggle, onStartFocus }) => {
+const TaskRow = ({ task, onToggle, onStartFocus, onEdit, onDelete, disabled }) => {
     const completed = task.status === 'completed'
-    const focusing = task.status === 'in-progress'
 
     return (
         <div
@@ -27,6 +27,7 @@ const TaskRow = ({ task, onToggle, onStartFocus }) => {
         >
             <Checkbox
                 checked={completed}
+                disabled={disabled}
                 onChange={() => onToggle(task.id)}
                 aria-label={`Mark "${task.title}" as ${completed ? 'incomplete' : 'complete'}`}
                 className="justify-self-center"
@@ -53,14 +54,15 @@ const TaskRow = ({ task, onToggle, onStartFocus }) => {
                         {task.estimate}
                     </span>
 
-                    {focusing && !completed && (
+                    {!completed && (
                         <button
                             type="button"
+                            disabled={disabled}
                             onClick={() => onStartFocus(task.id)}
                             className="ml-1 inline-flex items-center gap-1 rounded-control bg-primary px-2 py-0.5 text-[11px] font-semibold text-primary-contrast transition hover:bg-primary-hover"
                         >
                             <Play className="h-2.5 w-2.5 fill-current" strokeWidth={0} />
-                            Start Focus
+                            Focus timer
                         </button>
                     )}
                 </div>
@@ -92,6 +94,10 @@ const TaskRow = ({ task, onToggle, onStartFocus }) => {
                         Done
                     </span>
                 )}
+            </div>
+            <div className="flex gap-2">
+                <button type="button" disabled={disabled} aria-label={`Edit ${task.title}`} onClick={() => onEdit(task)}><Pencil className="h-4 w-4" /></button>
+                <button type="button" disabled={disabled} aria-label={`Delete ${task.title}`} onClick={() => onDelete(task)}><Trash2 className="h-4 w-4 text-danger" /></button>
             </div>
         </div>
     )

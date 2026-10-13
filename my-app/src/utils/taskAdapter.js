@@ -8,7 +8,7 @@
 // filters and the free-text search all read one shape, and so the local SEED fallback stays
 // directly comparable to a fetched list — filterTasks and matchTaskId work on both unchanged.
 
-import { daysBetween, startOfLocalDay, MONTHS } from './dates';
+import { daysBetween, startOfLocalDay, MONTHS } from './dates.js';
 
 // Seconds are dropped: a task estimated in whole minutes (R-TASK-13) has none to show, and a
 // countdown showing ":47" would imply a precision the data does not have.
@@ -118,6 +118,7 @@ export const toViewTask = (task) => {
     if (isLocalSeedTask(task)) return task;
 
     return {
+        ...task,
         id: task._id ?? task.id,
         title: task.title,
         context: task.context ?? '',

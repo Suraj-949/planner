@@ -9,7 +9,7 @@ const { apiLimiter } = require('./middleware/rateLimit.middleware');
 const { csrfGuard } = require('./middleware/csrf.middleware');
 const { requestIdMiddleware } = require('./middleware/requestId.middleware');
 const { ApiError } = require('./utils/http');
-const { logger } = require('./utils/logger');
+const { errorHandler } = require('./middleware/error.middleware');
 const { ok } = require('./utils/response');
 
 const app = express();
@@ -26,6 +26,8 @@ const ALLOWED_ORIGINS = (
     .split(',')
     .map((origin) => origin.trim())
     .filter(Boolean);
+
+app.use(requestIdMiddleware);
 
 app.use(
     helmet({
@@ -57,8 +59,6 @@ app.use(cookies());
 app.use(express.json({ limit: '100kb' }));
 app.use(express.urlencoded({ extended: true, limit: '100kb' }));
 
-// First so every subsequent log line and error response carries the id.
-app.use(requestIdMiddleware);
 
 app.use('/api', apiLimiter);
 
@@ -77,47 +77,6 @@ app.use((req, res, next) => {
     next(new ApiError(404, `Route ${req.method} ${req.originalUrl} not found`));
 });
 
-/*
- * Central error handler. Anything thrown by a controller — including rejected promises
- * forwarded by asyncHandler — lands here, so controllers no longer need their own
- * try/catch and can no longer return 400 for a genuine server fault.
- */
-// eslint-disable-next-line no-unused-vars
-app.use((err, req, res, next) => {
-    // Duplicate key from a race that slipped past the pre-check.
-    if (err.code === 11000) {
-        return res.status(400).json({ message: 'A record with these values already exists' });
-    }
-
-    // Schema validation surfaced by runValidators.
-    if (err.name === 'ValidationError') {
-        return res.status(400).json({ message: err.message });
-    }
-
-    // Malformed ObjectId in a path param.
-    if (err.name === 'CastError') {
-        return res.status(400).json({ message: `Invalid value for ${err.path}` });
-    }
-
-    const statusCode = err.statusCode || 500;
-
-    if (statusCode >= 500) {
-        // Stack traces stay server-side; the response carries a generic message only.
-        logger.error('Unhandled error', {
-            requestId: req.requestId,
-            method: req.method,
-            path: req.originalUrl,
-            statusCode,
-            // The error is logged in full — it is the one place the stack is safe to keep.
-            error: err.stack || err.message,
-        });
-    }
-
-    return res.status(statusCode).json({
-        ok: false,
-        message: statusCode >= 500 ? 'Internal server error' : err.message,
-        ...(err.details ? { details: err.details } : {}),
-    });
-});
+app.use(errorHandler);
 
 module.exports = app;

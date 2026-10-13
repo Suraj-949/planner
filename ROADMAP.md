@@ -26,15 +26,43 @@ Already built and working — **do not rebuild**:
 - Pomodoro timer (25/5) that survives page reload via stored epoch
 - Tailwind CSS 4 + lucide-react + React Router 7
 
-Not yet present: time tracking UI, search/filter, pagination, server-side analytics, habit
-tracking UI, database-backed streak.
+Basic client-side search (including description/notes), status/priority/context/date filters,
+and server-side status/priority/category filters are present. Search and filtering are not
+paginated and still load the full task list.
+
+Not yet present: time tracking UI, pagination, server-side analytics, habit tracking UI,
+database-backed streak.
 
 Present as **schema and validation only** — storage landed in 2.1, the behaviour that uses
 it is 2.2 and 2.4: subtasks (embedded in `Task`), `Task` ↔ project/goal links, recurrence
 rules, habits and habit completions, and the goal/milestone/project collections.
 
 Also already true, though listed nowhere above: multi-tenancy (`userId` on every owned
-document) and an automated test suite (109 tests, `node:test` only).
+document) and automated backend (`node:test`) and frontend (Vitest + Testing Library) test suites.
+
+---
+
+## Current-workflow corrections — October 2026
+
+- Task-page completion now persists through the API, with duplicate-submit protection and
+  visible failure handling. Edit and confirmed delete are wired into active and completed rows.
+- Focus actions save `in-progress` and navigate to the existing timer. This does **not**
+  persist a focus session or link recorded time to a task; that remains Phase 3.
+- Filter callbacks accept control values; the date filter compares calendar dates.
+- Task creation starts blank, without sample deadlines/subtasks. Recurrence scheduling is
+  visibly disabled until 2.2; the predefined context selector is not a real project link.
+- Completed counts describe the filtered list, not "today"; durations are labelled estimates,
+  not logged time. Unsupported navigation reports "coming soon". Board/calendar remain placeholders.
+- Auth, CSRF, rate-limit, parser and database failures use `{ ok: false, code, message, details? }`.
+- Regression coverage exercises task mutations, failures, filters and error envelopes.
+- Root-workspace dependency audit is clean after lockfile updates.
+
+**Verification limitation:** database-backed tests require a downloadable MongoDB binary or
+`MONGOMS_SYSTEM_BINARY`. The restricted review environment cannot download from
+`fastdl.mongodb.org`, so the full database suite must be rerun in CI; it is not marked green here.
+
+These fixes do not complete 2.2–2.5. Goal/project/habit APIs, recurrence execution, pagination,
+server-side streaks and the remaining pages are still pending.
 
 ---
 
@@ -105,7 +133,7 @@ which JavaScript parses as **UTC** midnight, but reminder and streak logic norma
 - ✅ `start` and `test` scripts in `backend/package.json`
 - ✅ `.env.example` for both packages
 - ✅ Root `package.json` with npm workspaces + `concurrently` to run both apps
-Structured JSON logger replacing `console.log`, with redaction
+- ✅ Structured JSON logger replacing `console.log`, with redaction
 - ✅ Request ID middleware
 - ✅ Seed script with sample data
 
@@ -150,7 +178,7 @@ correct deadlines in every timezone, deployable with one command, core logic tes
 
 ### 2.1 New Models
 
-✅ **Complete.** Five collections added, Task extended, enums centralised, 109 tests green.
+✅ **Complete.** Five collections added, Task extended, backend enums centralised, schema contract tests added.
 
 | Model | Key fields |
 |---|---|
@@ -202,6 +230,9 @@ derive goal progress are 2.2.
 
 ### 2.3 Query Capabilities
 
+**Partial:** basic server filters and client search/filter controls exist; the full query
+contract below, selectable sorting, subtask counts and pagination are pending.
+
 - Search across title, description, and notes
 - Filter by status, priority, category, tag, project, goal, date range
 - Sort by deadline, priority, date created, status
@@ -209,6 +240,9 @@ derive goal progress are 2.2.
 - Include subtask counts in list responses
 
 ### 2.4 Frontend Pages
+
+**Partial:** `TasksPage` has working CRUD, filtering and a timer handoff. The other pages
+below are not implemented; board/calendar controls currently show placeholders.
 
 | Page | Purpose |
 |---|---|
@@ -222,6 +256,9 @@ derive goal progress are 2.2.
 | `Habits` | Habit list with streak badges |
 
 ### 2.5 Frontend Infrastructure
+
+**Partial:** `components/layout/`, shared UI controls, auth context and a task service exist.
+Domain hooks, remaining services and filter/theme contexts are pending.
 
 - `layouts/` — authenticated shell with sidebar and header
 - `services/` — one API module per domain (`taskService.js`, `goalService.js`)
@@ -377,17 +414,17 @@ read the other's workspace data.
 
 Applies across all phases. Do not defer past Phase 2.
 
-- ⬜ **Root workspace** — one `package.json`, `concurrently` dev script
-- ⬜ **Shared enums** — `status`, `priority`, `category` currently declared in five places
-    (schema, three validators, two JSX files). Move to one shared module
+- ✅ **Root workspace** — one `package.json`, `concurrently` dev script
+- ◐ **Shared enums** — backend schema/validation share constants; frontend metadata
+    is still separate. Cross-package centralisation remains pending.
 - ⬜ **Input validation library** — replace hand-rolled validators with zod or joi
 - ⬜ **API versioning** — `/api/v1/...`
 - ⬜ **OpenAPI docs** — generated from route definitions
 - ⬜ **Pagination convention** — consistent `limit` / `offset` / cursor everywhere
-- ⬜ **Error envelope** — one shape for all errors, with a machine-readable `code`
+- ✅ **Error envelope** — one shape for all errors, with a machine-readable `code`
 - ⬜ **Feature flags** — gate AI, gamification, and SaaS work
 - ⬜ **Feature-level tests** — each phase ships with its own test coverage
-- ⬜ **CI** — lint, test, build on every push
+- ✅ **CI** — lint, frontend/backend tests, build and audit on pushes to main and PRs targeting main
 
 ---
 
@@ -398,7 +435,7 @@ to reverse later.
 
 | Decision | Options | Needed by | Recommendation |
 |---|---|---|---|
-| Subtask storage | Embedded array vs own collection | Phase 2 | Embed in `Task`. Simpler queries, subtasks are always read with their parent. Split later if subtasks need independent routing. |
+| Subtask storage — resolved in 2.1 | Embedded array | Phase 2 | Embedded in `Task`; reconsider only if independent routing becomes necessary. |
 | Recurrence format | Custom `{freq, interval, days}` vs RRULE string | Phase 2 | Custom object. An RRULE parser is a dependency and most users need a fraction of the spec. |
 | Streak storage | LocalStorage vs database | Phase 2 | Database, per user. LocalStorage is already wrong across shared devices. |
 | Analytics execution | Mongo aggregation pipelines vs app-side JS | Phase 3 | Aggregation pipelines. Data volume will outgrow in-memory processing. |

@@ -1,6 +1,7 @@
 const rateLimit = require('express-rate-limit');
 
-const jsonMessage = (message) => ({ message });
+const { errorBody } = require('../utils/response');
+const jsonMessage = (message) => errorBody(429, message);
 
 /*
  * Rate limits are split by cost: credential endpoints are the ones worth brute forcing,

@@ -1,4 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import UpdateTaskModal from '../components/UpdateTaskModal'
+import { taskService } from '../services/taskService'
+import updateStreak from '../utility/updateStreak'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Header from '../components/layout/Header'
 import Sidebar from '../components/layout/Sidebar'
 import Filters from '../components/tasks/Filters'
@@ -27,6 +31,11 @@ const TABS = ['all', 'today', 'upcoming', 'completed']
  */
 const TasksPage = () => {
     const { isAuthenticated } = useAuth()
+    const navigate = useNavigate()
+    const mutationLock = useRef(false)
+    const [isMutating, setIsMutating] = useState(false)
+    const [editingTask, setEditingTask] = useState(null)
+    const [pendingDelete, setPendingDelete] = useState(null)
 
     const [tasks, setTasks] = useState([])
     const [isLoading, setIsLoading] = useState(true)
@@ -45,7 +54,11 @@ const TasksPage = () => {
     const [view, setView] = useState('list')
     const [panelOpen, setPanelOpen] = useState(true)
     const [navOpen, setNavOpen] = useState(false)
-    const [activeNav, setActiveNav] = useState('tasks')
+    const activeNav = 'tasks'
+    const selectNav = (id) => {
+        if (id === 'focus') navigate('/timer')
+        else if (id !== 'tasks') setNotice({ tone: 'info', title: 'Coming soon', body: 'This page is planned but is not available yet.' })
+    }
 
     const setFilter = (key) => (value) => setFilters((current) => ({ ...current, [key]: value }))
 
@@ -93,8 +106,7 @@ const TasksPage = () => {
         }
 
         try {
-            const response = await axiosInstance.get('/tasks/fetch')
-            const rows = toViewTasks(response.data?.tasks)
+            const rows = toViewTasks(await taskService.list())
 
             if (rows.length === 0) {
                 showEmptyState()
@@ -127,29 +139,41 @@ const TasksPage = () => {
     const isPlaceholder = source === 'error'
     const isEmpty = source === 'empty'
 
-    const toggleAndPersist = useCallback(
-        async (id) => {
-            if (source !== 'live') return
+    // Keep the server as the source of truth. A synchronous lock also protects
+    // against double clicks before React renders the disabled controls.
+    const mutateTask = async (operation) => {
+        if (source !== 'live' || mutationLock.current) return
+        mutationLock.current = true
+        setIsMutating(true)
+        try {
+            await operation()
+        } catch (error) {
+            setNotice({ tone: 'danger', title: 'Task action failed', body: error.response?.data?.message ?? 'Please try again. Your changes were not saved.' })
+        } finally {
+            mutationLock.current = false
+            setIsMutating(false)
+        }
+    }
 
-            setTasks((current) =>
-                current.map((task) =>
-                    matchTaskId(task, id)
-                        ? { ...task, status: task.status === 'completed' ? 'pending' : 'completed' }
-                        : task
-                )
-            )
+    const toggleAndPersist = (id) => mutateTask(async () => {
+        const task = tasks.find((row) => matchTaskId(row, id))
+        if (!task) return
+        const status = task.status === 'completed' ? 'pending' : 'completed'
+        await taskService.update(id, { status })
+        if (status === 'completed') updateStreak()
+        await fetchTasks()
+    })
 
-            await fetchTasks()
-        },
-        [source, fetchTasks]
-    )
+    const startFocus = (id) => mutateTask(async () => {
+        await taskService.update(id, { status: 'in-progress' })
+        navigate('/timer')
+    })
 
-    // Starting focus is modelled as the in-progress state; the real implementation
-    // hands off to the pomodoro timer and records the session.
-    const startFocus = (id) =>
-        setTasks((current) =>
-            current.map((task) => (matchTaskId(task, id) ? { ...task, status: 'in-progress' } : task))
-        )
+    const deleteTask = () => mutateTask(async () => {
+        await taskService.remove(pendingDelete.id)
+        setPendingDelete(null)
+        await fetchTasks()
+    })
 
     const createTask = async (draft) => {
         if (isPlaceholder) return
@@ -209,7 +233,7 @@ const TasksPage = () => {
             <div className="hidden lg:block">
                 <Sidebar
                     activeItem={activeNav}
-                    onSelectItem={setActiveNav}
+                    onSelectItem={selectNav}
                     onSearch={setFilterFromEvent('query')}
                 />
             </div>
@@ -226,7 +250,7 @@ const TasksPage = () => {
                         <Sidebar
                             activeItem={activeNav}
                             onSelectItem={(id) => {
-                                setActiveNav(id)
+                                selectNav(id)
                                 setNavOpen(false)
                             }}
                             onSearch={setFilterFromEvent('query')}
@@ -236,6 +260,23 @@ const TasksPage = () => {
                 </div>
             )}
 
+            {editingTask && (
+                <UpdateTaskModal key={editingTask.id} task={editingTask}
+                    onClose={() => setEditingTask(null)} onUpdated={fetchTasks} />
+            )}
+            {pendingDelete && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+                    <div role="alertdialog" aria-modal="true" aria-labelledby="delete-title" className="w-full max-w-md rounded-card border border-border bg-surface p-6">
+                        <h2 id="delete-title" className="text-lg font-semibold">Delete this task?</h2>
+                        <p className="my-4">“{pendingDelete.title}” will be permanently removed.</p>
+                        <div className="flex justify-end gap-4">
+                            <button type="button" disabled={isMutating} onClick={() => setPendingDelete(null)}>Cancel</button>
+                            <button type="button" disabled={isMutating} onClick={deleteTask} className="text-danger">{isMutating ? 'Deleting…' : 'Delete'}</button>
+                        </div>
+                        {notice?.tone === 'danger' && <p role="alert" className="mt-3 text-danger">{notice.body}</p>}
+                    </div>
+                </div>
+            )}
             {/* Main column */}
             <div className="flex min-w-0 flex-1 flex-col">
                 <Header onOpenCreate={() => setPanelOpen(true)} onOpenNav={() => setNavOpen(true)} />
@@ -255,7 +296,7 @@ const TasksPage = () => {
                                 </span>
                             </div>
                             <p className="mt-0.5 text-xs text-content-subtle">
-                                Everything you need to get done with precision latency.
+                                Plan your tasks and keep track of what matters.
                             </p>
                         </div>
 
@@ -286,13 +327,13 @@ const TasksPage = () => {
                             view={view}
                             onViewChange={setView}
                             status={filters.status}
-                            onStatusChange={setFilterFromEvent('status')}
+                            onStatusChange={setFilter('status')}
                             priority={filters.priority}
-                            onPriorityChange={setFilterFromEvent('priority')}
+                            onPriorityChange={setFilter('priority')}
                             category={filters.category}
-                            onCategoryChange={setFilterFromEvent('category')}
+                            onCategoryChange={setFilter('category')}
                             dueDate={filters.dueDate}
-                            onDueDateChange={setFilterFromEvent('dueDate')}
+                            onDueDateChange={setFilter('dueDate')}
                             onNewTask={() => setPanelOpen(true)}
                             counts={counts}
                         />
@@ -328,11 +369,14 @@ const TasksPage = () => {
                                     activeTasks={activeTasks}
                                     completedTasks={completedTasks}
                                     onToggle={toggleAndPersist}
-                                    onStartFocus={isPlaceholder ? undefined : startFocus}
+                                    onStartFocus={startFocus}
+                                    onEdit={setEditingTask}
+                                    onDelete={setPendingDelete}
+                                    disabled={isPlaceholder || isMutating || isLoading}
                                     footer={{
                                         // Derived from estimateMinutes (R-TASK-13), which is
                                         // why the API stores minutes rather than "1h 30m".
-                                        logged: `${formatTotal(visible)} total`,
+                                        estimated: `${formatTotal(visible)} total`,
                                         completed: completedTasks.length,
                                         total: activeTasks.length + completedTasks.length,
                                     }}

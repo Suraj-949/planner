@@ -18,21 +18,17 @@ const Field = ({ label, htmlFor, children }) => (
 
 const CreateTaskPanel = ({ onClose, onCreate }) => {
     const [form, setForm] = useState({
-        title: 'Implement Dark Mode Heatmap for Habits',
-        description:
-            'Build GitHub-style contribution squares using green #22C55E intensities...',
+        title: '',
+        description: '',
         project: 'Planner Core',
-        deadline: '2025-10-26',
-        priority: 'high',
-        estimate: '1h 45m',
-        recurring: 'Daily',
+        deadline: '',
+        priority: 'medium',
+        estimate: '',
+        recurring: 'None',
     })
 
-    const [subtasks, setSubtasks] = useState([
-        'Define SVG matrix dimensions',
-        'Calculate 5 green tone levels',
-        'Wire hover tooltips with logged time',
-    ])
+    const [subtasks, setSubtasks] = useState([])
+    const [isSaving, setIsSaving] = useState(false)
 
     const [draftSubtask, setDraftSubtask] = useState('')
 
@@ -51,14 +47,18 @@ const CreateTaskPanel = ({ onClose, onCreate }) => {
     const removeSubtask = (index) =>
         setSubtasks((current) => current.filter((_, position) => position !== index))
 
-    const handleSubmit = (event) => {
+    const handleSubmit = async (event) => {
         event.preventDefault()
 
         const title = form.title.trim()
 
-        if (!title) return
-
-        onCreate({ ...form, title, subtasks })
+        if (!title || !form.deadline || isSaving) return
+        setIsSaving(true)
+        try {
+            await onCreate({ ...form, title, subtasks })
+        } finally {
+            setIsSaving(false)
+        }
     }
 
     return (
@@ -104,7 +104,7 @@ const CreateTaskPanel = ({ onClose, onCreate }) => {
 
                 {/* Project + deadline */}
                 <div className="grid grid-cols-2 gap-2">
-                    <Field label="Project" htmlFor="ct-project">
+                    <Field label="Context" htmlFor="ct-project">
                         <select
                             id="ct-project"
                             value={form.project}
@@ -176,7 +176,7 @@ const CreateTaskPanel = ({ onClose, onCreate }) => {
                         />
                     </Field>
 
-                    <Field label="Recurring" htmlFor="ct-recurring">
+                    <Field label="Recurring (coming soon)" htmlFor="ct-recurring">
                         <div className="relative">
                             <Repeat
                                 aria-hidden="true"
@@ -185,6 +185,8 @@ const CreateTaskPanel = ({ onClose, onCreate }) => {
                             />
                             <select
                                 id="ct-recurring"
+                                disabled
+                                title="Recurring task scheduling is not available yet"
                                 value={form.recurring}
                                 onChange={update('recurring')}
                                 className="h-8 w-full rounded-control border border-border bg-surface-input pl-7 pr-2 text-xs text-content outline-none transition hover:border-border-strong focus:border-primary focus:ring-2 focus:ring-primary-soft"
@@ -217,7 +219,7 @@ const CreateTaskPanel = ({ onClose, onCreate }) => {
                     <ul className="space-y-1">
                         {subtasks.map((subtask, index) => (
                             <li key={`${subtask}-${index}`} className="group flex items-center gap-2">
-                                <Checkbox checked readOnly aria-label={subtask} />
+                                <Checkbox checked={false} disabled aria-label={subtask} />
                                 <span className="flex-1 truncate text-xs text-content-muted">
                                     {subtask}
                                 </span>
@@ -256,6 +258,7 @@ const CreateTaskPanel = ({ onClose, onCreate }) => {
                     variant="primary"
                     size="md"
                     className="w-full"
+                    disabled={isSaving || !form.title.trim() || !form.deadline}
                     onClick={handleSubmit}
                 >
                     Create Task

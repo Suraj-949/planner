@@ -1,3 +1,5 @@
+import { toDateInputValue } from './dates.js'
+
 // Task filtering rules, extracted from the page component so each rule is
 // independently testable and the component stays presentational.
 
@@ -15,7 +17,7 @@ const matchesQuery = (task, query) => {
 
     if (!needle) return true
 
-    return [task.title, task.context, task.status, task.priority, ...(task.tags ?? [])]
+    return [task.title, task.description, task.notes, task.context, task.status, task.priority, ...(task.tags ?? [])]
         .join(' ')
         .toLowerCase()
         .includes(needle)
@@ -28,7 +30,7 @@ export const filterTasks = (tasks, { tab, query, status, priority, category, due
         if (status !== 'all' && task.status !== status) return false
         if (priority !== 'all' && task.priority !== priority) return false
         if (category !== 'all' && task.context !== category) return false
-        if (dueDate && task.dayOffset !== Number(dueDate)) return false
+        if (dueDate && toDateInputValue(task.deadline) !== dueDate) return false
 
         return true
     })
