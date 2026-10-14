@@ -242,6 +242,32 @@ const summariseAll = async (userId, todayKey = todayLocalKey()) => {
     );
 };
 
+/*
+ * Group raw completion rows into the two shapes the dashboard reads: per-habit day keys
+ * (done-today, the weekly tracker, the detail chart) and per-day totals (the heatmap).
+ *
+ * One aggregate feeds every habit visual on the page — previously each row issued its own
+ * history request, so opening the page cost one call per habit for data that this buckets
+ * in the same pass. Pure over plain rows, so it is testable without a database.
+ */
+const bucketCompletions = (rows) => {
+    const perHabit = {};
+    const dailyCounts = {};
+
+    for (const row of rows) {
+        if (!row?.day || !row?.habitId) continue;
+
+        const id = String(row.habitId);
+
+        if (!perHabit[id]) perHabit[id] = [];
+        perHabit[id].push(row.day);
+
+        dailyCounts[row.day] = (dailyCounts[row.day] ?? 0) + 1;
+    }
+
+    return { perHabit, dailyCounts };
+};
+
 module.exports = {
     summarise,
     summariseAll,
@@ -251,4 +277,5 @@ module.exports = {
     countByPeriod,
     periodKeyFor,
     weekStartKey,
+    bucketCompletions,
 };

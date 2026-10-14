@@ -35,6 +35,32 @@ export const useHabitHistory = (id) => {
 }
 
 /*
+ * Completion analytics for all habits over a date range, in one request.
+ *
+ * Serialised by key so changing the window retriggers the fetch while an unchanged
+ * window does not — object identity would change on every render. Both shapes are
+ * plain objects keyed by day or habit id, safe to default to empty before the first
+ * response arrives.
+ */
+export const useHabitsAnalytics = ({ from, to } = {}) => {
+    const key = JSON.stringify({ from, to })
+
+    const loader = useCallback(
+        () => habitsApi.analytics({ from, to }),
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [key]
+    )
+
+    const resource = useResource(loader)
+
+    return {
+        ...resource,
+        perHabit: resource.data?.perHabit ?? {},
+        dailyCounts: resource.data?.dailyCounts ?? {},
+    }
+}
+
+/*
  * Habit mutations.
  *
  * `toggle` sends the next value rather than asking the caller to compute it, so reopening

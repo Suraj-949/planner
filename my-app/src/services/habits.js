@@ -13,6 +13,15 @@ export const detail = (id) => get(`/habits/fetch/${id}`)
 // Local `YYYY-MM-DD` keys on which the habit was completed, newest first.
 export const history = (id) => get(`/habits/history/${id}`)
 
+/*
+ * One call for every habit visual on the page: per-habit day keys (done-today, the
+ * weekly tracker, the detail chart) plus per-day totals for the heatmap. Replaces the
+ * previous one-history-request-per-row pattern, so the cost of the page no longer grows
+ * with the number of habits.
+ */
+export const analytics = ({ from, to } = {}) =>
+    get('/habits/analytics', { from, to })
+
 export const create = (body) => post('/habits/create', body)
 
 export const update = (id, body) => put(`/habits/update/${id}`, body)

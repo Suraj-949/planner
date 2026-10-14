@@ -8,6 +8,7 @@ router.post('/create', authMiddleware, habitController.createHabit);
 router.get('/fetch', authMiddleware, habitController.getHabits);
 router.get('/fetch/:id', authMiddleware, habitController.getHabit);
 router.get('/history/:id', authMiddleware, habitController.getHabitHistory);
+router.get('/analytics', authMiddleware, habitController.getHabitsAnalytics);
 router.put('/update/:id', authMiddleware, habitController.updateHabit);
 router.patch('/archive/:id', authMiddleware, habitController.archiveHabit);
 router.patch('/restore/:id', authMiddleware, habitController.unarchiveHabit);

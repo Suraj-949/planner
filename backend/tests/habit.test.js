@@ -7,6 +7,7 @@ const {
     completionRate,
     periodKeyFor,
     weekStartKey,
+    bucketCompletions,
 } = require('../src/services/habit.service');
 
 /*
@@ -187,4 +188,40 @@ test('a monthly rate is computed from month keys, not day keys', () => {
 
     assert.equal(computeStreak(days, 'monthly', 3, '2026-10-20'), 2);
     assert.equal(completionRate(days, 'monthly', 3, '2026-10-20'), 100);
+});
+
+// ---- analytics bucketing -------------------------------------------------
+
+test('completion rows bucket into per-habit keys and per-day totals', () => {
+    const rows = [
+        { habitId: 'aaaaaaaaaaaaaaaaaaaaaaaa', day: MON },
+        { habitId: 'aaaaaaaaaaaaaaaaaaaaaaaa', day: TUE },
+        { habitId: 'bbbbbbbbbbbbbbbbbbbbbbbb', day: MON },
+    ];
+
+    const { perHabit, dailyCounts } = bucketCompletions(rows);
+
+    assert.deepEqual(perHabit['aaaaaaaaaaaaaaaaaaaaaaaa'], [MON, TUE]);
+    assert.deepEqual(perHabit['bbbbbbbbbbbbbbbbbbbbbbbb'], [MON]);
+    assert.equal(dailyCounts[MON], 2);
+    assert.equal(dailyCounts[TUE], 1);
+});
+
+test('bucketing ignores rows without a day or a habit', () => {
+    const { perHabit, dailyCounts } = bucketCompletions([
+        { habitId: 'aaaaaaaaaaaaaaaaaaaaaaaa', day: '' },
+        { habitId: null, day: MON },
+        null,
+        undefined,
+    ]);
+
+    assert.deepEqual(perHabit, {});
+    assert.deepEqual(dailyCounts, {});
+});
+
+test('bucketing an empty result set is empty in both shapes, never NaN', () => {
+    const { perHabit, dailyCounts } = bucketCompletions([]);
+
+    assert.deepEqual(perHabit, {});
+    assert.deepEqual(dailyCounts, {});
 });

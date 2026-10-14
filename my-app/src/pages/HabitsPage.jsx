@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import AppShell from '../components/layout/AppShell'
 import Modal from '../components/ui/Modal'
 import Input from '../components/ui/Input'
@@ -9,29 +9,34 @@ import Notice from '../components/ui/Notice'
 import EmptyState from '../components/ui/EmptyState'
 import LoadingRow from '../components/ui/LoadingRow'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
-import { useHabits, useHabitHistory, useHabitActions } from '../hooks/useHabits'
+import HabitProgressCard from '../components/habits/HabitProgressCard'
+import HabitWeekTracker from '../components/habits/HabitWeekTracker'
+import HabitHeatmap from '../components/habits/HabitHeatmap'
+import HabitDetailModal from '../components/habits/HabitDetailModal'
+import { useHabits, useHabitsAnalytics, useHabitActions } from '../hooks/useHabits'
 import { errorMessage } from '../hooks/useResource'
 import { HABIT_CADENCES, HABIT_CADENCE_LABELS, MAX_HABIT_TARGET } from '../constants/habitMeta'
-import { formatDateKey } from '../utils/dates'
-import { Flame, Pencil, Trash2, Archive, ArchiveRestore } from 'lucide-react'
+import { addLocalDaysKey, formatDateKey, startOfWeekKey } from '../utils/dates'
+import { Flame, Pencil, Trash2, Archive, ArchiveRestore, ChevronRight } from 'lucide-react'
+
+// 52 weeks of slack so the heatmap's full window is always inside one analytics fetch.
+const HEATMAP_WEEKS = 52
 
 /*
- * One habit row, with its own history fetch.
+ * One habit row.
  *
- * "Done today" cannot be derived from the list response — the summary carries streaks and
- * rates, not the individual days — so each row loads its own completion dates. That is one
- * request per habit rather than one per click, and it means the checkbox reflects what the
- * server actually holds instead of an optimistic guess.
+ * "Done today" arrives as a prop from the page-level analytics map rather than a
+ * per-row history fetch — N habits used to cost N requests before anything rendered,
+ * which is the pattern the consolidated endpoint exists to remove. The tick still
+ * round-trips, so the checkbox reflects what the server holds, never an optimistic guess.
  */
-const HabitRow = ({ habit, onChanged, onEdit, onArchive, onRestore, onDelete }) => {
-    const { dates, isLoading } = useHabitHistory(habit._id)
+const HabitRow = ({ habit, doneToday, historyReady, onChanged, onEdit, onOpen, onArchive, onRestore, onDelete }) => {
     const { tick, untick } = useHabitActions(onChanged)
 
     const [busy, setBusy] = useState(false)
     const [error, setError] = useState(null)
 
     const todayKey = formatDateKey(new Date())
-    const doneToday = dates.includes(todayKey)
 
     const toggleToday = useCallback(async () => {
         setBusy(true)
@@ -60,17 +65,27 @@ const HabitRow = ({ habit, onChanged, onEdit, onArchive, onRestore, onDelete }) 
             <div className="flex items-center gap-3">
                 <Checkbox
                     checked={doneToday}
-                    disabled={busy || isLoading}
+                    // Disabled until the analytics map lands, so the box never flashes
+                    // "not done" for a habit that was actually ticked yesterday.
+                    disabled={busy || !historyReady}
                     onChange={toggleToday}
                     aria-label={`Mark "${habit.title}" as ${doneToday ? 'not done' : 'done'} for today`}
                 />
 
-                <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-content">{habit.title}</p>
-                    <p className="text-[11px] text-content-subtle">
-                        {HABIT_CADENCE_LABELS[habit.cadence] ?? habit.cadence} · target {habit.targetPerPeriod}
+                <button
+                    type="button"
+                    onClick={() => onOpen(habit)}
+                    className="min-w-0 flex-1 text-left"
+                    title={`Open details for ${habit.title}`}
+                >
+                    <p className="truncate text-sm font-medium text-content transition hover:text-primary">
+                        {habit.title}
                     </p>
-                </div>
+                    <p className="text-[11px] text-content-subtle">
+                        {HABIT_CADENCE_LABELS[habit.cadence] ?? habit.cadence} · target{' '}
+                        {habit.targetPerPeriod}
+                    </p>
+                </button>
 
                 <div className="flex shrink-0 items-center gap-3">
                     <span className="inline-flex items-center gap-1 text-xs tabular-nums text-content-muted">
@@ -80,6 +95,10 @@ const HabitRow = ({ habit, onChanged, onEdit, onArchive, onRestore, onDelete }) 
 
                     <span className="w-10 text-right text-xs tabular-nums text-content-subtle">
                         {habit.completionRate}%
+                    </span>
+
+                    <span className="hidden text-content-subtle sm:block">
+                        <ChevronRight className="h-3.5 w-3.5" strokeWidth={1.8} />
                     </span>
 
                     <div className="flex items-center gap-1">
@@ -219,12 +238,39 @@ const HabitsPage = () => {
     const [archived, setArchived] = useState(false)
     const { habits, isLoading, error, refetch } = useHabits({ archived })
 
-    const { create, update, archive, restore, remove } = useHabitActions(refetch)
-
     const [formOpen, setFormOpen] = useState(false)
     const [editing, setEditing] = useState(null)
     const [pendingDelete, setPendingDelete] = useState(null)
     const [notice, setNotice] = useState(null)
+    const [detail, setDetail] = useState(null)
+
+    // Lazy, stable identity — a fresh `new Date()` per render would retrigger every
+    // memo below for no reason.
+    const [todayKey] = useState(() => formatDateKey(new Date()))
+    const currentMonday = startOfWeekKey(todayKey)
+
+    // One fetch covers the heatmap year and every week the navigator can reach.
+    const analyticsFrom = useMemo(
+        () => addLocalDaysKey(currentMonday, -HEATMAP_WEEKS * 7),
+        [currentMonday]
+    )
+    const [weekStart, setWeekStart] = useState(currentMonday)
+
+    const {
+        perHabit,
+        dailyCounts,
+        isLoading: analyticsLoading,
+        error: analyticsError,
+        refetch: refetchAnalytics,
+    } = useHabitsAnalytics({ from: analyticsFrom, to: todayKey })
+
+    // Every mutation — tick, create, archive, delete — refreshes both resources, so the
+    // progress bar, tracker and list can never disagree about the same completion.
+    const refreshAll = useCallback(async () => {
+        await Promise.all([refetch(), refetchAnalytics()])
+    }, [refetch, refetchAnalytics])
+
+    const { create, update, archive, restore, remove } = useHabitActions(refreshAll)
 
     const showError = useCallback((err, title) => {
         setNotice({ tone: 'danger', title, body: errorMessage(err, 'The request was rejected.') })
@@ -240,6 +286,29 @@ const HabitsPage = () => {
         },
         [showError]
     )
+
+    /* ---- derived ---- */
+
+    // Archived habits are not scheduled today; the tracker and progress bar only make
+    // sense over the active scope.
+    const activeHabits = useMemo(() => (archived ? [] : habits), [archived, habits])
+
+    const completedToday = useMemo(
+        () => activeHabits.filter((habit) => (perHabit[habit._id] ?? []).includes(todayKey)).length,
+        [activeHabits, perHabit, todayKey]
+    )
+
+    const canPrevWeek = weekStart > analyticsFrom
+    const canNextWeek = weekStart < currentMonday
+
+    const goPrevWeek = () => setWeekStart(addLocalDaysKey(weekStart, -7))
+    const goNextWeek = () => setWeekStart(addLocalDaysKey(weekStart, 7))
+
+    const openDetail = useCallback((habit) => setDetail(habit), [])
+
+    // The detail modal reads the habit from live list data when it is still on the page,
+    // so a stat refreshed by a refetch shows through without a second fetch.
+    const detailHabit = detail ? (habits.find((h) => h._id === detail._id) ?? detail) : null
 
     return (
         <AppShell
@@ -268,6 +337,52 @@ const HabitsPage = () => {
                 <span className="ml-auto text-[11px] tabular-nums text-content-subtle">{habits.length} habits</span>
             </div>
 
+            {analyticsError && (
+                <div className="mb-3">
+                    <Notice tone="danger" title="History unavailable">
+                        {errorMessage(analyticsError, 'Completion history could not be loaded.')}
+                    </Notice>
+                </div>
+            )}
+
+            {/* Today's progress — active scope only; archived habits are not scheduled. */}
+            {!archived && (
+                <div className="mb-3">
+                    <HabitProgressCard
+                        completed={completedToday}
+                        total={activeHabits.length}
+                        isLoading={isLoading && analyticsLoading}
+                    />
+                </div>
+            )}
+
+            {/* Weekly tracker with week navigation */}
+            {!archived && (
+                <div className="mb-3">
+                    <HabitWeekTracker
+                        habits={habits}
+                        weekStartKey={weekStart}
+                        perHabit={perHabit}
+                        todayKey={todayKey}
+                        onPrev={goPrevWeek}
+                        onNext={goNextWeek}
+                        canPrev={canPrevWeek}
+                        canNext={canNextWeek}
+                        onHabitClick={openDetail}
+                        isLoading={isLoading && analyticsLoading}
+                    />
+                </div>
+            )}
+
+            {/* Year heatmap — real per-day completion totals, every scope */}
+            <div className="mb-3">
+                <HabitHeatmap
+                    dailyCounts={dailyCounts}
+                    todayKey={todayKey}
+                    isLoading={analyticsLoading}
+                />
+            </div>
+
             <section className="overflow-hidden rounded-card border border-border bg-surface">
                 {isLoading ? (
                     <LoadingRow label="Loading habits…" className="m-3" />
@@ -292,11 +407,14 @@ const HabitsPage = () => {
                             <HabitRow
                                 key={habit._id}
                                 habit={habit}
-                                onChanged={refetch}
+                                doneToday={(perHabit[habit._id] ?? []).includes(todayKey)}
+                                historyReady={!analyticsLoading && !analyticsError}
+                                onChanged={refreshAll}
                                 onEdit={(target) => {
                                     setEditing(target)
                                     setFormOpen(true)
                                 }}
+                                onOpen={openDetail}
                                 onArchive={(target) => run(() => archive(target._id), 'Could not archive the habit')}
                                 onRestore={(target) => run(() => restore(target._id), 'Could not restore the habit')}
                                 onDelete={(target) => setPendingDelete(target)}
@@ -305,6 +423,13 @@ const HabitsPage = () => {
                     </ul>
                 )}
             </section>
+
+            <HabitDetailModal
+                open={Boolean(detailHabit)}
+                habit={detailHabit}
+                dayKeys={detailHabit ? (perHabit[detailHabit._id] ?? []) : []}
+                onClose={() => setDetail(null)}
+            />
 
             <HabitForm
                 key={editing?._id ?? 'new-habit'}
@@ -315,9 +440,9 @@ const HabitsPage = () => {
                     setEditing(null)
                 }}
                 onSubmit={async (payload) => {
+                    // create/update already await onChanged (refreshAll) before returning.
                     if (editing) await update(editing._id, payload)
                     else await create(payload)
-                    await refetch()
                 }}
             />
 

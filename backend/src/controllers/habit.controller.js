@@ -9,8 +9,20 @@ const {
     isValidEntityId,
 } = require('../utils/entityValidation');
 const { assertOwnedHabit, deleteHabitData } = require('../services/ownership.service');
-const { summarise, summariseAll } = require('../services/habit.service');
-const { SERVER_TIMEZONE } = require('../utils/dates');
+const { summarise, summariseAll, bucketCompletions } = require('../services/habit.service');
+const {
+    SERVER_TIMEZONE,
+    parseDateValue,
+    toLocalDayKey,
+    fromLocalDayKey,
+    addLocalDays,
+    atNoon,
+    daysBetweenLocal,
+    todayLocalKey,
+} = require('../utils/dates');
+
+// One year of days plus a week of slack, so the heatmap's 53-week window fits whole.
+const MAX_ANALYTICS_DAYS = 400;
 
 const createHabit = asyncHandler(async (req, res) => {
     const { value, errors } = validateHabitPayload(req.body);
@@ -215,6 +227,62 @@ const getHabitHistory = asyncHandler(async (req, res) => {
     });
 });
 
+/*
+ * Completion analytics for every habit of the user over a date range, in one request.
+ *
+ * The page needs the same rows in two shapes: per-habit day keys (weekly tracker,
+ * done-today, detail chart) and per-day totals (heatmap). Returning both from one
+ * aggregate removes the one-request-per-habit pattern the list view used to rely on —
+ * N habits now cost one call, not N.
+ *
+ * Range defaults to the past 400 days, is bounded to that same cap, and both ends are
+ * anchored at local noon so a completion stored for the boundary day is always included.
+ */
+const getHabitsAnalytics = asyncHandler(async (req, res) => {
+    const today = todayLocalKey();
+    const toKey = req.query.to ? toLocalDayKey(parseDateValue(req.query.to)) : today;
+    const fromKey = req.query.from
+        ? toLocalDayKey(parseDateValue(req.query.from))
+        : toLocalDayKey(addLocalDays(fromLocalDayKey(toKey), -(MAX_ANALYTICS_DAYS - 1)));
+
+    const fromNoon = atNoon(fromKey);
+    const toNoon = atNoon(toKey);
+
+    if (!fromNoon || !toNoon) throw badRequest('Invalid date range');
+    if (fromNoon > toNoon) throw badRequest('The start of the range must not be after its end');
+
+    const span = daysBetweenLocal(fromKey, toKey);
+
+    if (span >= MAX_ANALYTICS_DAYS) {
+        throw badRequest(`The range may not exceed ${MAX_ANALYTICS_DAYS} days`);
+    }
+
+    // Bucketed to a local day key here, exactly as the per-habit history endpoint does,
+    // so the client never re-derives "which day is this instant".
+    const rows = await HabitCompletion.aggregate([
+        { $match: { userId: req.user, date: { $gte: fromNoon, $lte: toNoon } } },
+        {
+            $project: {
+                habitId: 1,
+                day: {
+                    $dateToString: {
+                        format: '%Y-%m-%d',
+                        date: '$date',
+                        timezone: SERVER_TIMEZONE,
+                    },
+                },
+            },
+        },
+    ]);
+
+    ok(res, 200, {
+        message: 'Habit analytics fetched successfully',
+        from: fromKey,
+        to: toKey,
+        ...bucketCompletions(rows),
+    });
+});
+
 module.exports = {
     createHabit,
     getHabits,
@@ -225,4 +293,5 @@ module.exports = {
     deleteHabit,
     tickHabit,
     getHabitHistory,
+    getHabitsAnalytics,
 };

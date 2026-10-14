@@ -127,3 +127,27 @@ export const getReminder = (task) => {
 
     return null
 }
+
+/*
+ * Monday of the week containing `value`, as a day key.
+ *
+ * ISO weeks start on Monday — the same boundary the backend's weekly streak bucketing
+ * uses — so a week strip here and a weekly streak there cannot disagree about where a
+ * week begins. `(getDay() + 6) % 7` maps Sunday (0) to 6 and Monday (1) to 0.
+ */
+export const startOfWeekKey = (value) => {
+    const key = formatDateKey(value)
+
+    if (!key) return ''
+
+    const date = parseDateValue(key)
+    const sinceMonday = (date.getDay() + 6) % 7
+
+    return addLocalDaysKey(key, -sinceMonday)
+}
+
+// The seven local day keys of the week starting at `weekStartKey`, Mon → Sun.
+export const weekDayKeys = (weekStartKey) =>
+    Array.from({ length: 7 }, (_, index) => addLocalDaysKey(weekStartKey, index))
+
+export const WEEKDAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']

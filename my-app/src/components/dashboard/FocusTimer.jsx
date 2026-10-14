@@ -2,7 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 're
 import Button from '../ui/Button'
 import { Play, Pause, RotateCcw, Timer } from 'lucide-react'
 import { formatDateKey } from '../../utils/dates'
-import { addFocusMinutes, addSession, sessionsFor } from '../../utils/focusStore'
+import { recordFocusSession, sessionsFor } from '../../utils/focusStore'
 
 const FOCUS_SECONDS = 25 * 60
 const BREAK_SECONDS = 5 * 60
@@ -25,9 +25,12 @@ const formatClock = (totalSeconds) => {
  * setState happens inside the interval callback, never in the effect body.
  *
  * Completing a focus interval records 25 minutes and one session into the local focus
- * log, which is what the dashboard's "Focus Time" metric reads. Exposed imperative
- * `start()` lets the header's Quick Focus arm the timer without the parent owning any
- * timer state.
+ * log through `recordFocusSession` — the same single write path the habit page's Focus
+ * Mode uses — which is what the dashboard's "Focus Time" metric, the Session Ledger and
+ * the habit page's Today's Focus card all read. The task is read from a ref at the moment
+ * of recording, so a task switched mid-session is attributed correctly, and a session
+ * never mutates the task it is anchored to. Exposed imperative `start()` lets the
+ * header's Quick Focus arm the timer without the parent owning any timer state.
  */
 const FocusTimer = forwardRef(function FocusTimer({ task, onTaskChange, tasks = [], onFocusLogged }, ref) {
     const [mode, setMode] = useState('focus')
@@ -35,6 +38,14 @@ const FocusTimer = forwardRef(function FocusTimer({ task, onTaskChange, tasks = 
     const [running, setRunning] = useState(false)
     const [sessions, setSessions] = useState(() => sessionsFor(formatDateKey(new Date())))
     const endRef = useRef(0)
+
+    // Mirrored so the interval closure — stamped once when Start is pressed — records the
+    // task as it is at the end of the session, not as it was at the beginning.
+    const taskRef = useRef(task)
+
+    useEffect(() => {
+        taskRef.current = task
+    }, [task])
 
     useImperativeHandle(ref, () => ({
         start: () => setRunning(true),
@@ -55,9 +66,21 @@ const FocusTimer = forwardRef(function FocusTimer({ task, onTaskChange, tasks = 
             window.clearInterval(interval)
 
             if (mode === 'focus') {
-                const dayKey = formatDateKey(new Date())
-                addFocusMinutes(dayKey, 25)
-                setSessions(addSession(dayKey))
+                const endedAt = Date.now()
+                const current = taskRef.current
+                const day = formatDateKey(new Date())
+
+                recordFocusSession({
+                    day,
+                    minutes: 25,
+                    mode: 'pomodoro',
+                    taskId: current?.id ?? null,
+                    taskTitle: current?.title ?? 'Focus session',
+                    startedAt: endedAt - FOCUS_SECONDS * 1000,
+                    endedAt,
+                })
+
+                setSessions(sessionsFor(day))
                 onFocusLogged?.()
                 setMode('break')
                 setRemaining(BREAK_SECONDS)
