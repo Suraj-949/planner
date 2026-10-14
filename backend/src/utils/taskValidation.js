@@ -2,14 +2,13 @@ const { isValidObjectId } = require('mongoose');
 const { badRequest } = require('./http');
 const {
     TASK_STATUSES,
-    TASK_CATEGORIES,
     TASK_PRIORITIES,
-    TASK_CONTEXTS,
     RECURRENCE_FREQUENCIES,
     RECURRENCE_WEEKDAYS,
     MAX_TITLE_LENGTH,
     MAX_DESCRIPTION_LENGTH,
     MAX_SUBTASK_TITLE_LENGTH,
+    MAX_CATEGORY_LENGTH,
     MAX_ESTIMATE_MINUTES,
     MAX_ACTUAL_MINUTES,
     MAX_TAG_COUNT,
@@ -22,9 +21,7 @@ const {
 // Aliases kept for the existing import sites. The values now live in src/constants, so
 // the schema and this validator cannot drift; the old names stay as the public surface.
 const VALID_STATUSES = TASK_STATUSES;
-const VALID_CATEGORIES = TASK_CATEGORIES;
 const VALID_PRIORITIES = TASK_PRIORITIES;
-const VALID_CONTEXTS = TASK_CONTEXTS;
 
 /*
  * A calendar date arrives from the client as "YYYY-MM-DD". `new Date(value)` parses that
@@ -229,23 +226,24 @@ function validateTaskPayload(body, { partial = false } = {}) {
         }
     }
 
+    /*
+     * Free text, not an enum: the form offers the TASK_CATEGORIES presets plus a "Custom"
+     * option that stores the user's own label. Only emptiness and length are rejected —
+     * an enum here would reject the very value the custom field exists to capture.
+     * An explicit null is treated as empty rather than silently clearing a defaulted field.
+     */
     if (has('category')) {
-        if (!VALID_CATEGORIES.includes(body.category)) {
-            errors.push(`Category must be one of: ${VALID_CATEGORIES.join(', ')}`);
-        } else {
-            value.category = body.category;
-        }
-    }
+        const category =
+            body.category === null || body.category === undefined
+                ? ''
+                : String(body.category).trim();
 
-    if (has('context')) {
-        // No default: `category` falls back to 'other' because that value is a real choice,
-        // whereas any project here would be a guess. An explicit null clears it.
-        if (body.context === null) {
-            value.context = undefined;
-        } else if (!VALID_CONTEXTS.includes(body.context)) {
-            errors.push(`Context must be one of: ${VALID_CONTEXTS.join(', ')}`);
+        if (!category) {
+            errors.push('Category cannot be empty');
+        } else if (category.length > MAX_CATEGORY_LENGTH) {
+            errors.push(`Category must be at most ${MAX_CATEGORY_LENGTH} characters`);
         } else {
-            value.context = body.context;
+            value.category = category;
         }
     }
 
@@ -411,9 +409,8 @@ const isValidTaskId = (id) => isValidObjectId(id);
 
 module.exports = {
     VALID_STATUSES,
-    VALID_CATEGORIES,
     VALID_PRIORITIES,
-    VALID_CONTEXTS,
+    MAX_CATEGORY_LENGTH,
     MAX_ESTIMATE_MINUTES,
     MAX_ACTUAL_MINUTES,
     MAX_NOTES_LENGTH,

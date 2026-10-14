@@ -69,11 +69,13 @@ rollup.
 ```text
 status     : pending | in-progress | completed
 priority   : high | medium | low
-category   : DSA | development | college | personal | work | other
+category   : personal | learning | office-work | side hustle  (+ free text via Custom, ≤ 40 chars)
 ```
 
-**Server side** these are enforced by `backend/src/utils/taskValidation.js` and declared in
-`backend/src/models/task.model.js`.
+**Server side** `status` and `priority` are enums enforced by
+`backend/src/utils/taskValidation.js` and declared in `backend/src/models/task.model.js`.
+`category` is deliberately **not** an enum: the form's Custom option stores the user's own
+label, so only emptiness and a 40-character bound are rejected.
 
 **Client side** the option lists live in `my-app/src/constants/taskMeta.js`. The backend
 schema remains the source of truth; the client module is a mirror, not an independent

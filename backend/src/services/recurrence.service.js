@@ -94,7 +94,6 @@ const serialiseForModel = (task) => ({
     userId: task.userId,
     category: task.category,
     priority: task.priority,
-    context: task.context,
     projectId: task.projectId,
     goalId: task.goalId,
     recurrence: task.recurrence,

@@ -31,21 +31,22 @@ Phase 2 backend — **built and tested, not yet surfaced in the UI**:
 - Goals, milestones, projects, habits and habit completions, each with a CRUD API under
   `/api/goals`, `/api/milestones`, `/api/projects`, `/api/habits`
 - Server-side streak per user, derived from `Task.completedAt` and exposed at
-  `/api/tasks/streak`. The legacy `updateStreak.js` localStorage counter still exists on
-  the pre-redesign timer route and is not authoritative
+  `/api/tasks/streak`. The old localStorage counter (`updateStreak.js`) has been deleted
+  along with the pre-redesign timer route that carried it
 - Recurrence: completing a recurring task materialises the next occurrence, collapsing
   missed periods into one instance
 - Habit streaks over scheduled occurrences, so a "3x per week" habit survives a missed
   Monday
 - Dashboard aggregates at `/api/tasks/stats`, with goal progress derived from milestones
 - Server-side search, filtering, sorting and pagination on `getTasks`
+- The full Phase 2.4 page set, behind one shared authenticated shell: dashboard, tasks
+  (list + detail), projects (list + detail), goals (list + detail), habits, planner
+  (week), calendar (month), focus (Pomodoro) and analytics
+- An API-per-domain `services/` layer and `useResource`-based hooks on the client, so no
+  component calls `axiosInstance` directly
 
-Not yet present: time tracking UI, habit tracking UI, and the Phase 2.4 frontend pages
-(task detail, projects, goals, habits, planner, calendar).
-
-Present but not yet complete: the legacy `/create-task` and `/timer` routes still carry
-their own copies of the edit, delete and streak logic, and remain outside the redesigned
-task screen.
+Not yet present: time tracking UI (sessions against a task) and the analytics charts —
+the per-day completion series exists in `stats.service.js` but is not routed.
 
 Also already true, though listed nowhere above: multi-tenancy (`userId` on every owned
 document) and an automated test suite (190 tests, `node:test` only).
@@ -201,8 +202,8 @@ hand-written copy reintroduced anywhere fails the suite.
 one row per completed day rather than a streak counter, with a unique index on
 `{ habitId, date }` so a double-tap cannot inflate a habit's own streak.
 
-Storage and validation only — the services that advance a recurrence, count a streak and
-derive goal progress are 2.2.
+Storage and validation; the services that advance a recurrence, count a streak and derive
+goal progress shipped in 2.2.
 
 ### 2.2 Backend Services
 
@@ -256,42 +257,56 @@ plus `/api/tasks/stats` and `/api/tasks/streak`.
 
 ### 2.4 Frontend Pages
 
-🟡 **Partial.** `TasksPage` is the redesigned dashboard: search, filter bar, status/priority
-selectors, create panel (now also editing), row actions, and separate loading / empty /
-error states. It reuses the authenticated shell, header and shared UI primitives.
+✅ **Complete.** Every page renders inside one authenticated shell (`AppShell` — sidebar,
+header, mobile drawer), and every list reads the server rather than a local copy.
 
-Still missing: real stats, task detail, projects, goals, habits, planner and calendar.
-The board and calendar view switches render a placeholder message. The legacy
-`/create-task` and `/timer` routes still serve the pre-redesign components, so their edit,
-delete and streak logic is not part of the main task screen.
+| Page | Route | What it does |
+|---|---|---|
+| `Dashboard` | `/dashboard` | Open/overdue/today split, streak, completion rate, habit summary |
+| `TasksPage` | `/tasks` | Server-side search, filter bar, sort, pagination; create/edit/delete |
+| `TaskDetailPage` | `/tasks/:id` | Description, subtask checklist, notes, estimate vs actual, project/goal links |
+| `ProjectsPage` | `/projects` | Active/archived toggle, colour, open-task counts, create/edit/archive/delete |
+| `ProjectDetailPage` | `/projects/:id` | Project-scoped stats and task list, archive/restore/delete |
+| `GoalsPage` | `/goals` | Status filter, milestone-derived progress bars, create/edit/delete |
+| `GoalDetailPage` | `/goals/:id` | Milestone checklist (the only input to progress) and linked tasks |
+| `HabitsPage` | `/habits` | Per-row history fetch so "done today" reflects the server, streaks, rates |
+| `PlannerPage` | `/planner` | Mon–Sun grid, tasks bucketed by local day key, week navigation |
+| `CalendarPage` | `/calendar` | Month grid with a selected-day drawer, tasks bucketed by day key |
+| `FocusPage` | `/focus` | The Pomodoro timer, restored from an absolute end time across reloads |
+| `AnalyticsPage` | `/analytics` | Windowed aggregates (7/30/90 days, all time) and a status-mix bar |
 
-| Page | Purpose |
-|---|---|
-| `Dashboard` | Rebuilt — real stats, not lifetime dilution |
-| `TaskList` | Search, filter bar, sort control, pagination |
-| `TaskDetail` | Subtasks, tags, notes, time estimate vs actual |
-| `ProjectList` / `ProjectDetail` | Projects, grouped tasks |
-| `GoalList` / `GoalDetail` | Goals → milestones → projects → tasks |
-| `Planner` | Weekly and daily planning view |
-| `Calendar` | Deadline calendar, month and week |
-| `Habits` | Habit list with streak badges |
+- ✅ Loading, empty and error states are distinct everywhere — "you have nothing" and "we
+  could not load your anything" look identical on screen and get opposite treatments
+- ✅ Mutations are optimistic on the checkbox and reconciled by a refetch; a failed save
+  reloads rather than hand-rolling a rollback that can itself be wrong
+- ✅ Mutations are withheld while a request has failed, so a stale row cannot be toggled
+  into looking saved
+- ⬜ Board (kanban) view — removed rather than left as a dead switch; the calendar view
+  lives at `/calendar` where it can be a real page
+- ⬜ Time tracking against a task — Phase 3.1
+- ⬜ Inline project/goal pickers on the task form — the form sets `category`; `projectId`
+  and `goalId` are linked from the project and goal detail pages for now
 
 ### 2.5 Frontend Infrastructure
 
-🟡 **Partial.** `layouts/` (Sidebar, Header), the shared UI library (Button, Input, Badge,
-Notice, Checkbox, and now Modal and ConfirmDialog), and the auth context exist. The
-API-per-domain `services/` layer and the `useTasks` / `useGoals` / `useHabits` hooks do not
-— components call `axiosInstance` directly.
+✅ **Complete.** Components no longer call `axiosInstance` directly.
 
-- `layouts/` — authenticated shell with sidebar and header
-- `services/` — one API module per domain (`taskService.js`, `goalService.js`)
-- `hooks/` — `useTasks`, `useGoals`, `useHabits`, `useDebounce`
-- `context/` — auth context already exists; add filter and theme context
-- Shared component library extracted from existing duplication: form fields, modal, toast,
-  dropdown, stat card, badge, empty state
+- ✅ `components/layout/` — `AppShell` (sidebar + header + mobile drawer), `Sidebar`
+  (router-driven active state, live badges), `Header`
+- ✅ `services/` — one module per domain: `http` (query builder + envelope-agnostic
+  transport), `tasks`, `goals`, `milestones`, `projects`, `habits`
+- ✅ `hooks/` — `useResource` (one async resource with `isLoading` / `error` / `data`
+  kept distinct), `useTasks` (`useTasks`, `useTask`, `useStreak`, `useStats`,
+  `useTaskActions`), `useGoals` (+ milestones), `useProjects`, `useHabits` (+ history)
+- ✅ `context/` — auth context already existed
+- ✅ Shared component library: Button, Input, Label, Badge, Checkbox, Modal,
+  ConfirmDialog, Notice, EmptyState, LoadingRow, StatCard, ProgressBar
+- ⬜ Theme context — the design system is a single `index.css`; a context would only
+  forward what CSS custom properties already do
+- ⬜ Frontend tests — still none; correctness is guarded by lint and a build check only
 
-**Exit criteria:** a user can create a goal, add milestones, attach a project, break it
-into tasks and subtasks, plan a week, and see honest progress.
+**Exit criteria — met:** a user can create a goal, add milestones, attach a project,
+break it into tasks and subtasks, plan a week, and see honest progress.
 
 ---
 
@@ -310,7 +325,8 @@ New `FocusSession` model:
 
 Changes:
 
-- ⬜ Rewrite `PomodoroTimer` to persist sessions to the database instead of localStorage
+- ⬜ Rewrite the focus timer (`FocusPage`, formerly `PomodoroTimer`) to persist sessions to
+  the database instead of localStorage
 - ⬜ Keep localStorage only for crash recovery, not as the source of truth
 - ⬜ Fix inconsistent `isRunning` encodings and the `timeLeft || fallback` bug
 - ⬜ Add long-break intervals and a session counter

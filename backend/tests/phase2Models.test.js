@@ -12,12 +12,11 @@ const HabitCompletion = require('../src/models/habitCompletion.model');
 
 const {
     TASK_STATUSES,
-    TASK_CATEGORIES,
     TASK_PRIORITIES,
-    TASK_CONTEXTS,
     GOAL_STATUSES,
     RECURRENCE_FREQUENCIES,
     HABIT_CADENCES,
+    MAX_CATEGORY_LENGTH,
 } = require('../src/constants');
 
 const ALICE = new mongoose.Types.ObjectId();
@@ -48,11 +47,21 @@ test('task schema reads its enums from the shared module', () => {
     // moment anyone reintroduces a hand-written copy.
     assert.deepEqual(Task.schema.path('status').enumValues, [...TASK_STATUSES]);
     assert.deepEqual(Task.schema.path('priority').enumValues, [...TASK_PRIORITIES]);
-    assert.deepEqual(Task.schema.path('category').enumValues, [...TASK_CATEGORIES]);
-    assert.deepEqual(Task.schema.path('context').enumValues, [...TASK_CONTEXTS]);
     assert.deepEqual(Goal.schema.path('status').enumValues, [...GOAL_STATUSES]);
     assert.deepEqual(Task.schema.path('recurrence.freq').enumValues, [...RECURRENCE_FREQUENCIES]);
     assert.deepEqual(Habit.schema.path('cadence').enumValues, [...HABIT_CADENCES]);
+});
+
+test('category is a bounded free string and context no longer exists', () => {
+    // `category` is deliberately NOT enum-locked: the form offers the TASK_CATEGORIES
+    // presets plus a "Custom" option that stores the user's own label, so a closed enum
+    // would reject the very value the custom field exists to capture. Only the length
+    // bound is schema-enforced (the validator enforces the same limit).
+    const category = Task.schema.path('category');
+
+    assert.deepEqual(category.enumValues, [], 'category must accept custom values');
+    assert.equal(category.options.maxlength, MAX_CATEGORY_LENGTH);
+    assert.equal(Task.schema.path('context'), undefined, 'context was replaced by category');
 });
 
 /* ------------------------------------------------------------------- goal */

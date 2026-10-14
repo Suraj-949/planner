@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import Header from '../components/layout/Header'
-import Sidebar from '../components/layout/Sidebar'
+import AppShell from '../components/layout/AppShell'
 import Filters from '../components/tasks/Filters'
 import TaskList from '../components/tasks/TaskList'
 import TaskFormPanel from '../components/tasks/TaskFormPanel'
@@ -10,11 +9,15 @@ import { SEED } from '../data/seedTasks'
 import { filterTasks } from '../utils/filterTasks'
 import { matchTaskId, toViewTasks, formatTotal, parseEstimate } from '../utils/taskAdapter'
 import { toRecurrence } from '../constants/taskMeta'
-import axiosInstance from '../axiosInstance'
+import { list, create, update, remove } from '../services/tasks'
 import { useAuth } from '../hooks/useAuth'
 import { LoaderCircle } from 'lucide-react'
 
 const TABS = ['all', 'today', 'upcoming', 'completed']
+
+// The server caps a single page at 100 rows; the list needs the whole set for the
+// client-side tabs and counts, so anything larger is pulled through in chunks.
+const PAGE_CHUNK = 100
 
 /*
  * Where the visible rows came from. Kept distinct rather than collapsed into a boolean,
@@ -49,8 +52,6 @@ const TasksPage = () => {
     const [panelMode, setPanelMode] = useState('create')
     const [editingTask, setEditingTask] = useState(null)
     const [pendingDelete, setPendingDelete] = useState(null)
-    const [navOpen, setNavOpen] = useState(false)
-    const [activeNav, setActiveNav] = useState('tasks')
 
     const setFilter = (key) => (value) => setFilters((current) => ({ ...current, [key]: value }))
 
@@ -98,13 +99,29 @@ const TasksPage = () => {
         }
 
         try {
-            const response = await axiosInstance.get('/tasks/fetch')
-            const rows = toViewTasks(response.data?.tasks)
+            // The whole set, not a page: every tab count and the client-side filters below
+            // read from this one list, so a truncated response would undercount silently.
+            const first = await list({ limit: PAGE_CHUNK })
 
-            if (rows.length === 0) {
+            let rows = first.tasks ?? []
+            const total = first.meta?.total ?? rows.length
+
+            for (let page = 2; rows.length < total; page += 1) {
+                const next = await list({ limit: PAGE_CHUNK, page })
+                const chunk = next.tasks ?? []
+
+                // An empty page means the collection shrank mid-read; stop rather than loop.
+                if (chunk.length === 0) break
+
+                rows = rows.concat(chunk)
+            }
+
+            const views = toViewTasks(rows)
+
+            if (views.length === 0) {
                 showEmptyState()
             } else {
-                setTasks(rows)
+                setTasks(views)
                 setSource('live')
             }
         } catch {
@@ -143,18 +160,13 @@ const TasksPage = () => {
     /*
      * Writes a change to the server and reloads, so the list shows what was stored rather
      * than what was optimistically assumed.
-     *
-     * This is the handler the dashboard was missing. `toggleAndPersist` used to flip the
-     * row in React state and then call `fetchTasks()` without ever sending the update, so
-     * completing a task on this page reappeared as incomplete on the next load — the
-     * optimistic state made it look like it had worked.
      */
     const patchTask = useCallback(
         async (id, patch, fallback) => {
             if (source !== 'live') return
 
             try {
-                await axiosInstance.put(`/tasks/update/${id}`, patch)
+                await update(id, patch)
                 await fetchTasks()
             } catch (error) {
                 // Not rolled back by hand: reloading restores whatever the server actually
@@ -178,8 +190,8 @@ const TasksPage = () => {
 
             // Optimistic so the checkbox responds on the same frame; the request below
             // makes it true. Without it the row flips and then flips back on reload.
-            setTasks((list) =>
-                list.map((task) => (matchTaskId(task, id) ? { ...task, status: next } : task))
+            setTasks((rows) =>
+                rows.map((task) => (matchTaskId(task, id) ? { ...task, status: next } : task))
             )
 
             await patchTask(
@@ -206,8 +218,8 @@ const TasksPage = () => {
 
             if (!current || current.status === 'completed') return
 
-            setTasks((list) =>
-                list.map((task) => (matchTaskId(task, id) ? { ...task, status: 'in-progress' } : task))
+            setTasks((rows) =>
+                rows.map((task) => (matchTaskId(task, id) ? { ...task, status: 'in-progress' } : task))
             )
 
             await patchTask(
@@ -245,7 +257,7 @@ const TasksPage = () => {
             notes: draft.notes,
             priority: draft.priority,
             deadline: draft.deadline,
-            context: draft.context,
+            category: draft.category,
             estimateMinutes: parseEstimate(draft.estimate),
             subtasks: draft.subtasks ?? [],
             // An omitted key means "leave unchanged" on a partial update, so clearing the
@@ -257,12 +269,11 @@ const TasksPage = () => {
 
         try {
             if (isEdit && editingTask) {
-                await axiosInstance.put(`/tasks/update/${editingTask.id}`, payload)
+                await update(editingTask.id, payload)
             } else {
-                await axiosInstance.post('/tasks/create', payload)
+                await create(payload)
             }
 
-            setPanelOpen(false)
             setPanelMode('create')
             setEditingTask(null)
             await fetchTasks()
@@ -281,7 +292,7 @@ const TasksPage = () => {
         if (!target) return
 
         try {
-            await axiosInstance.delete(`/tasks/delete/${target.id}`)
+            await remove(target.id)
             setPendingDelete(null)
             await fetchTasks()
         } catch (error) {
@@ -319,182 +330,152 @@ const TasksPage = () => {
     )
 
     return (
-        <div className="flex h-screen overflow-hidden bg-background text-content">
-            {/* Sidebar — static on desktop, drawer below lg */}
-            <div className="hidden lg:block">
-                <Sidebar
-                    activeItem={activeNav}
-                    onSelectItem={setActiveNav}
-                    onSearch={setFilterFromEvent('query')}
-                />
-            </div>
-
-            {navOpen && (
-                <div className="fixed inset-0 z-40 flex lg:hidden">
-                    <button
-                        type="button"
-                        aria-label="Close navigation"
-                        onClick={() => setNavOpen(false)}
-                        className="absolute inset-0 bg-black/60"
-                    />
-                    <div className="relative z-10">
-                        <Sidebar
-                            activeItem={activeNav}
-                            onSelectItem={(id) => {
-                                setActiveNav(id)
-                                setNavOpen(false)
-                            }}
-                            onSearch={setFilterFromEvent('query')}
-                            onClose={() => setNavOpen(false)}
-                        />
+        <AppShell
+            onCreate={openCreate}
+            search={{ value: filters.query, onChange: setFilter('query') }}
+        >
+            {/*
+                Bleeds AppShell's main padding so the create panel can sit flush against
+                the right edge, the same way it did when the page owned its own layout.
+            */}
+            <div className="-mx-3 -my-3 flex min-h-[calc(100vh-3rem)] flex-wrap">
+                <main className="min-w-0 flex-1 px-3 py-3">
+                    {/* Page heading */}
+                    <div className="mb-3">
+                        <div className="flex items-center gap-2">
+                            <h1 className="text-xl font-semibold tracking-tight text-content">
+                                My Tasks
+                            </h1>
+                            <span className="inline-flex items-center gap-1.5 rounded-pill bg-primary-soft px-2 py-0.5 text-[11px] font-semibold text-primary">
+                                <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-primary" />
+                                {activeCount} active
+                            </span>
+                        </div>
+                        <p className="mt-0.5 text-xs text-content-subtle">
+                            Everything you need to get done with precision latency.
+                        </p>
                     </div>
-                </div>
-            )}
 
-            {/* Main column */}
-            <div className="flex min-w-0 flex-1 flex-col">
-                <Header onOpenCreate={openCreate} onOpenNav={() => setNavOpen(true)} />
-
-                {/* Row wraps below xl so the create panel stacks under the task list. */}
-                <div className="flex min-h-0 flex-1 flex-wrap overflow-y-auto">
-                    <main className="min-w-0 flex-1 overflow-y-auto px-3 py-3">
-                        {/* Page heading */}
-                        <div className="mb-3">
-                            <div className="flex items-center gap-2">
-                                <h1 className="text-xl font-semibold tracking-tight text-content">
-                                    My Tasks
-                                </h1>
-                                <span className="inline-flex items-center gap-1.5 rounded-pill bg-primary-soft px-2 py-0.5 text-[11px] font-semibold text-primary">
-                                    <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-primary" />
-                                    {activeCount} active
-                                </span>
-                            </div>
-                            <p className="mt-0.5 text-xs text-content-subtle">
-                                Everything you need to get done with precision latency.
-                            </p>
-                        </div>
-
-                        {isLoading && (
-                            <div className="mb-3 flex items-center gap-2 rounded-card border border-border bg-surface px-3.5 py-3 text-sm text-content-muted">
-                                <LoaderCircle className="h-4 w-4 animate-spin" strokeWidth={2} />
-                                Loading your tasks&hellip;
-                            </div>
-                        )}
-
-                        {notice && (
-                            <div className="mb-3">
-                                <Notice
-                                    tone={notice.tone}
-                                    title={notice.title}
-                                    onDismiss={() => setNotice(null)}
-                                >
-                                    {notice.body}
-                                </Notice>
-                            </div>
-                        )}
-
-                        <Filters
-                            activeTab={filters.tab}
-                            onTabChange={setFilter('tab')}
-                            query={filters.query}
-                            onQueryChange={setFilter('query')}
-                            view={view}
-                            onViewChange={setView}
-                            status={filters.status}
-                            onStatusChange={setFilterFromEvent('status')}
-                            priority={filters.priority}
-                            onPriorityChange={setFilterFromEvent('priority')}
-                            category={filters.category}
-                            onCategoryChange={setFilterFromEvent('category')}
-                            dueDate={filters.dueDate}
-                            onDueDateChange={setFilterFromEvent('dueDate')}
-                            onNewTask={openCreate}
-                            counts={counts}
-                        />
-
-                        <div className="mt-3">
-                            {/* Ordered deliberately: a genuinely empty account is explained
-                                and offered an action, rather than being reported as "no
-                                tasks match these filters" — which would blame the filters for
-                                a condition they did not cause. */}
-                            {isEmpty ? (
-                                <div className="rounded-card border border-dashed border-border-strong bg-surface px-4 py-12 text-center">
-                                    <p className="text-sm font-medium text-content">
-                                        Nothing here yet
-                                    </p>
-                                    <p className="mx-auto mt-1 max-w-sm text-sm text-content-subtle">
-                                        This account has no tasks stored. Create one and it will
-                                        appear here straight away.
-                                    </p>
-                                    <button
-                                        type="button"
-                                        onClick={openCreate}
-                                        className="mt-4 inline-flex h-8 items-center gap-1.5 rounded-control bg-primary px-3.5 text-xs font-semibold text-primary-contrast transition hover:bg-primary-hover active:bg-primary-active"
-                                    >
-                                        Create your first task
-                                    </button>
-                                </div>
-                            ) : !isLoading && visible.length === 0 && !isPlaceholder ? (
-                                <p className="rounded-card border border-dashed border-border-strong bg-surface px-3 py-10 text-center text-sm text-content-subtle">
-                                    No tasks match these filters.
-                                </p>
-                            ) : view === 'list' ? (
-                                <TaskList
-                                    activeTasks={activeTasks}
-                                    completedTasks={completedTasks}
-                                    onToggle={toggleAndPersist}
-                                    onStartFocus={isPlaceholder ? undefined : startFocus}
-                                    onEdit={openEdit}
-                                    onDelete={setPendingDelete}
-                                    canMutate={!isPlaceholder}
-                                    footer={{
-                                        // Derived from estimateMinutes (R-TASK-13), which is
-                                        // why the API stores minutes rather than "1h 30m".
-                                        logged: `${formatTotal(visible)} total`,
-                                        completed: completedTasks.length,
-                                        total: activeTasks.length + completedTasks.length,
-                                    }}
-                                />
-                            ) : (
-                                <div className="rounded-card border border-border bg-surface px-3 py-10 text-center text-sm text-content-subtle">
-                                    {view === 'board'
-                                        ? 'Board view — group tasks by status.'
-                                        : 'Calendar view — lay tasks out by due date.'}
-                                </div>
-                            )}
-                        </div>
-                    </main>
-
-                    {/*
-                        Rendered once. The wrapper is a fixed-width column at xl and
-                        above, and a full-width stacked block below — a second instance
-                        would duplicate form state and ids.
-
-                        Withheld while dummy data is on screen: creating a task would leave the
-                        list unchanged, since the next fetch still has no records to show.
-                    */}
-                    {panelOpen && !isPlaceholder && (
-                        <div className="w-full shrink-0 border-t border-border xl:w-[268px] xl:border-t-0 xl:border-l">
-                            {/*
-                                Keyed on the task being edited so switching from one task to
-                                another, or from edit back to create, re-runs the panel's
-                                initial-state hook. Without it the form keeps showing the
-                                previous task's fields.
-                            */}
-                            <TaskFormPanel
-                                key={panelMode === 'edit' ? `edit-${editingTask?.id}` : 'create'}
-                                mode={panelMode}
-                                initialTask={editingTask}
-                                onClose={() => {
-                                    setPanelOpen(false)
-                                    setPanelMode('create')
-                                    setEditingTask(null)
-                                }}
-                                onSubmit={submitDraft}
-                            />
+                    {isLoading && (
+                        <div className="mb-3 flex items-center gap-2 rounded-card border border-border bg-surface px-3.5 py-3 text-sm text-content-muted">
+                            <LoaderCircle className="h-4 w-4 animate-spin" strokeWidth={2} />
+                            Loading your tasks&hellip;
                         </div>
                     )}
-                </div>
+
+                    {notice && (
+                        <div className="mb-3">
+                            <Notice
+                                tone={notice.tone}
+                                title={notice.title}
+                                onDismiss={() => setNotice(null)}
+                            >
+                                {notice.body}
+                            </Notice>
+                        </div>
+                    )}
+
+                    <Filters
+                        activeTab={filters.tab}
+                        onTabChange={setFilter('tab')}
+                        query={filters.query}
+                        onQueryChange={setFilter('query')}
+                        view={view}
+                        onViewChange={setView}
+                        status={filters.status}
+                        onStatusChange={setFilterFromEvent('status')}
+                        priority={filters.priority}
+                        onPriorityChange={setFilterFromEvent('priority')}
+                        category={filters.category}
+                        onCategoryChange={setFilterFromEvent('category')}
+                        dueDate={filters.dueDate}
+                        onDueDateChange={setFilterFromEvent('dueDate')}
+                        onNewTask={openCreate}
+                        counts={counts}
+                    />
+
+                    <div className="mt-3">
+                        {/* Ordered deliberately: a genuinely empty account is explained
+                            and offered an action, rather than being reported as "no
+                            tasks match these filters" — which would blame the filters for
+                            a condition they did not cause. */}
+                        {isEmpty ? (
+                            <div className="rounded-card border border-dashed border-border-strong bg-surface px-4 py-12 text-center">
+                                <p className="text-sm font-medium text-content">
+                                    Nothing here yet
+                                </p>
+                                <p className="mx-auto mt-1 max-w-sm text-sm text-content-subtle">
+                                    This account has no tasks stored. Create one and it will
+                                    appear here straight away.
+                                </p>
+                                <button
+                                    type="button"
+                                    onClick={openCreate}
+                                    className="mt-4 inline-flex h-8 items-center gap-1.5 rounded-control bg-primary px-3.5 text-xs font-semibold text-primary-contrast transition hover:bg-primary-hover active:bg-primary-active"
+                                >
+                                    Create your first task
+                                </button>
+                            </div>
+                        ) : !isLoading && visible.length === 0 && !isPlaceholder ? (
+                            <p className="rounded-card border border-dashed border-border-strong bg-surface px-3 py-10 text-center text-sm text-content-subtle">
+                                No tasks match these filters.
+                            </p>
+                        ) : view === 'list' ? (
+                            <TaskList
+                                activeTasks={activeTasks}
+                                completedTasks={completedTasks}
+                                onToggle={toggleAndPersist}
+                                onStartFocus={isPlaceholder ? undefined : startFocus}
+                                onEdit={openEdit}
+                                onDelete={setPendingDelete}
+                                canMutate={!isPlaceholder}
+                                footer={{
+                                    // Derived from estimateMinutes (R-TASK-13), which is
+                                    // why the API stores minutes rather than "1h 30m".
+                                    logged: `${formatTotal(visible)} total`,
+                                    completed: completedTasks.length,
+                                    total: activeTasks.length + completedTasks.length,
+                                }}
+                            />
+                        ) : (
+                            <div className="rounded-card border border-border bg-surface px-3 py-10 text-center text-sm text-content-subtle">
+                                {view === 'board'
+                                    ? 'Board view — group tasks by status.'
+                                    : 'Calendar view — lay tasks out by due date.'}
+                            </div>
+                        )}
+                    </div>
+                </main>
+
+                {/*
+                    Rendered once. The wrapper is a fixed-width column at xl and
+                    above, and a full-width stacked block below — a second instance
+                    would duplicate form state and ids.
+
+                    Withheld while dummy data is on screen: creating a task would leave the
+                    list unchanged, since the next fetch still has no records to show.
+                */}
+                {panelOpen && !isPlaceholder && (
+                    <div className="w-full shrink-0 border-t border-border xl:w-[268px] xl:border-t-0 xl:border-l">
+                        {/*
+                            Keyed on the task being edited so switching from one task to
+                            another, or from edit back to create, re-runs the panel's
+                            initial-state hook. Without it the form keeps showing the
+                            previous task's fields.
+                        */}
+                        <TaskFormPanel
+                            key={panelMode === 'edit' ? `edit-${editingTask?.id}` : 'create'}
+                            mode={panelMode}
+                            initialTask={editingTask}
+                            onClose={() => {
+                                setPanelOpen(false)
+                                setPanelMode('create')
+                                setEditingTask(null)
+                            }}
+                            onSubmit={submitDraft}
+                        />
+                    </div>
+                )}
             </div>
 
             <ConfirmDialog
@@ -510,7 +491,7 @@ const TasksPage = () => {
                 <span className="font-medium text-content">&ldquo;{pendingDelete?.title}&rdquo;</span> will
                 be permanently removed, along with its subtasks. This cannot be undone.
             </ConfirmDialog>
-        </div>
+        </AppShell>
     )
 }
 

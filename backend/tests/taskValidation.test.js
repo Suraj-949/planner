@@ -5,7 +5,7 @@ const {
     parseCalendarDate,
     normaliseDeadline,
     validateTaskPayload,
-    VALID_CONTEXTS,
+    MAX_CATEGORY_LENGTH,
     MAX_ESTIMATE_MINUTES,
     MAX_ACTUAL_MINUTES,
     MAX_NOTES_LENGTH,
@@ -135,15 +135,16 @@ test('create trims the title and rejects an over-long one', () => {
 });
 
 test('create rejects values outside the enums', () => {
+    // `category` is no longer an enum — it accepts any bounded free string — so only
+    // status and priority are still closed lists.
     const { errors } = validateTaskPayload({
         title: 'Valid',
         deadline: '2025-10-24',
         status: 'archived',
         priority: 'urgent',
-        category: 'Marketing',
     });
 
-    assert.equal(errors.length, 3);
+    assert.equal(errors.length, 2);
 });
 
 test('update only validates the fields that were sent', () => {
@@ -206,49 +207,54 @@ test('payload normalisation drops unknown fields so userId cannot be injected', 
 });
 
 /*
- * Dashboard fields. Each is rejected by an empty string like every other enum, which the
- * loop above already covers for status/priority/category — these assert the same treatment
- * for `context` so the four stay symmetrical.
+ * Category. Free text rather than an enum: the form offers the presets plus a "Custom"
+ * option that stores the user's own label, so a closed list would reject the very value
+ * the custom field exists to capture. Empty and over-long are still rejected — the empty
+ * case is the same invariant the loop above covers for status and priority.
  */
-test('context accepts each known project and rejects anything else', () => {
-    for (const context of VALID_CONTEXTS) {
+test('category accepts the presets and any custom value', () => {
+    for (const category of ['personal', 'learning', 'office-work', 'side hustle', 'Gym', 'client: Acme']) {
         const { value, errors } = validateTaskPayload(
-            { title: 'Valid', deadline: '2025-10-24', context },
+            { title: 'Valid', deadline: '2025-10-24', category },
             { partial: true }
         );
 
-        assert.deepEqual(errors, [], `expected "${context}" to be accepted`);
-        assert.equal(value.context, context);
+        assert.deepEqual(errors, [], `expected "${category}" to be accepted`);
+        assert.equal(value.category, category);
     }
 
-    const rejected = validateTaskPayload(
-        { title: 'Valid', deadline: '2025-10-24', context: 'Some New Project' },
+    // Surrounding whitespace is trimmed so "  Gym  " and "Gym" are the same category.
+    const padded = validateTaskPayload({ category: '  Gym  ' }, { partial: true });
+
+    assert.deepEqual(padded.errors, []);
+    assert.equal(padded.value.category, 'Gym');
+});
+
+test('category rejects empty, null and over-long values', () => {
+    const empty = validateTaskPayload({ category: '' }, { partial: true });
+
+    assert.ok(empty.errors.some((message) => /Category cannot be empty/.test(message)));
+    assert.equal(empty.value.category, undefined);
+
+    const nulled = validateTaskPayload({ category: null }, { partial: true });
+
+    assert.ok(nulled.errors.some((message) => /Category cannot be empty/.test(message)));
+    assert.equal(nulled.value.category, undefined);
+
+    const tooLong = validateTaskPayload(
+        { category: 'x'.repeat(MAX_CATEGORY_LENGTH + 1) },
         { partial: true }
     );
 
-    assert.ok(rejected.errors.some((message) => /Context must be one of/.test(message)));
-    assert.equal(rejected.value.context, undefined);
-});
+    assert.ok(tooLong.errors.length > 0);
+    assert.equal(tooLong.value.category, undefined);
 
-test('context has no default but an explicit null clears it', () => {
-    // Guessing a project would file a task under the wrong one, so omission is left absent
-    // rather than defaulted the way `category` defaults to 'other'.
-    const omitted = validateTaskPayload({ title: 'Valid', deadline: '2025-10-24' });
+    const atLimit = validateTaskPayload(
+        { category: 'x'.repeat(MAX_CATEGORY_LENGTH) },
+        { partial: true }
+    );
 
-    assert.deepEqual(omitted.errors, []);
-    assert.equal(omitted.value.context, undefined);
-
-    const cleared = validateTaskPayload({ context: null }, { partial: true });
-
-    assert.deepEqual(cleared.errors, []);
-    assert.equal(cleared.value.context, undefined);
-});
-
-test('an empty string context is rejected rather than treated as absent', () => {
-    const { value, errors } = validateTaskPayload({ context: '' }, { partial: true });
-
-    assert.ok(errors.some((message) => /Context must be one of/.test(message)));
-    assert.equal(value.context, undefined);
+    assert.deepEqual(atLimit.errors, [], 'exactly at the limit must be allowed');
 });
 
 test('estimate is stored as whole minutes and bounded', () => {
@@ -336,13 +342,13 @@ test('subtasks reject blank titles and oversized input', () => {
 
 test('an update touching only new fields leaves the rest untouched', () => {
     const { value, errors } = validateTaskPayload(
-        { context: 'Obsidian UI', estimateMinutes: 30, tags: ['icons'], subtasks: ['Crop'] },
+        { category: 'learning', estimateMinutes: 30, tags: ['icons'], subtasks: ['Crop'] },
         { partial: true }
     );
 
     assert.deepEqual(errors, []);
     assert.deepEqual(Object.keys(value).sort(), [
-        'context',
+        'category',
         'estimateMinutes',
         'subtasks',
         'tags',

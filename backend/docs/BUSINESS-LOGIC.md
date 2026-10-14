@@ -49,14 +49,14 @@ browser can produce, while breaking curl, mobile clients, and proxies that strip
 | R-TASK-2 | `deadline` is required |
 | R-TASK-3 | `status` defaults to `pending`; must be one of the three enum values |
 | R-TASK-4 | `priority` defaults to `medium`; must be `high`, `medium`, or `low` |
-| R-TASK-5 | `category` defaults to `other`; must be one of the six enum values |
+| R-TASK-5 | `category` defaults to `personal`. Free text, not an enum: the form offers the presets (`personal`, `learning`, `office-work`, `side hustle`) plus a **Custom** option that stores the user's own label. Bounded to 40 characters; empty and `null` are rejected |
 | R-TASK-6 | `userId` is taken from the token, never from the request body |
 | R-TASK-7 | An omitted optional field is left unchanged on update; an empty string is **rejected**, not treated as absent |
 | R-TASK-8 | Enum validation runs on both `save()` and `findOneAndUpdate` (`runValidators: true`) |
 | R-TASK-9 | A task belonging to another user returns `404`, not `403` |
 | R-TASK-10 | Deletion is permanent. There is no soft delete in v1 |
 | R-TASK-11 | An unknown field is rejected rather than silently dropped, so a typo cannot look like a successful write |
-| R-TASK-12 | `context` is the owning project, one of `Planner Core`, `Obsidian UI`, `Strategy 2025`, `Infrastructure`. **Optional with no default** — unlike `category`, which falls back to `other`, any project here would be a guess that files the task under the wrong one |
+| R-TASK-12 | ~~`context` is the owning project~~ **Removed.** `category` is now the single classification field (see R-TASK-5); the separate `context` enum, its index and its validator rule were deleted rather than left as a second, half-used label |
 | R-TASK-13 | `estimateMinutes` is stored as whole minutes in `0…1440`, never as a formatted `"1h 30m"` string. A stringified duration cannot be sorted, summed or aggregated, so the dashboard's time-total footer would have to be rebuilt client-side. Fractions and blanks are rejected; `null` clears the field |
 | R-TASK-14 | `tags` are free-text keywords backing dashboard search: trimmed, lowercased, de-duplicated, blanks dropped, at most 20 of 50 characters. Normalising on write means search matching never depends on how the user capitalised a word |
 | R-TASK-15 | `subtasks` are a checklist of `{ title, completed }`, capped at 50, and are **distinct from `tags`**. The UI previously fed checklist items into `tags`, conflating the two. A bare string is accepted as `{ title, completed: false }` because the dashboard panel still holds plain strings |
@@ -90,8 +90,9 @@ day, so every timezone from UTC−12 to UTC+12 still lands on the same calendar 
 
 ## 4. Streak
 
-Server-side streak is Phase 2. The rules are recorded now so the code does not invent them
-by accident.
+The streak is computed on read, never stored. These rules are what
+`services/streak.service.js` implements; they are recorded here so a second
+implementation cannot invent different ones by accident.
 
 | Rule | Detail |
 |---|---|
@@ -101,12 +102,15 @@ by accident.
 | R-STREAK-4 | Last completion was exactly yesterday → increment |
 | R-STREAK-5 | Last completion was 2+ days ago → reset to `1` |
 | R-STREAK-6 | Clock skew producing a negative gap → reset to `1`, never decrement |
-| R-STREAK-7 | Streak state is **per user** and lives in the database ⬜ Phase 2 |
+| R-STREAK-7 | Streak state is **per user** and lives in the database ✅ |
 | R-STREAK-8 | Un-completing a task does **not** decrement the streak. A streak measures days active, not current status |
 
-**Currently the streak lives in `localStorage` on the client.** That violates R-STREAK-7
-outright — it is not scoped to a user, so two people sharing a browser inherit each other's
-streak, and it survives logout. Moving it server-side is a Phase 2 item.
+**The streak is derived, never stored.** `services/streak.service.js` walks the distinct
+local day keys of `Task.completedAt` for one user, newest first, and counts the run that
+includes today or yesterday. There is no counter to drift, and R-STREAK-7 holds by
+construction because the query is always scoped to `req.user`. The old client-side
+`localStorage` counter — unscoped, unlogoutable, and non-recomputable — was deleted along
+with the pre-redesign timer route.
 
 ---
 
@@ -118,7 +122,7 @@ streak, and it survives logout. Moving it server-side is a Phase 2 item.
 | R-STAT-2 | An empty task list yields `0`, not `NaN` |
 | R-STAT-3 | Status buckets are exactly `completed`, `in-progress`, `pending` |
 | R-STAT-4 | A task with a status outside the enum belongs to no bucket and is excluded rather than silently counted as pending |
-| R-STAT-5 | The current dashboard computes over **all** tasks with no date window, so it is a lifetime figure ⬜ Phase 2 will add period scoping |
+| R-STAT-5 | Statistics are window-scoped: `from` / `to` bound the deadline, so "this month" means "due this month". Left unset the aggregate covers everything, which is the lifetime figure ✅ |
 
 R-STAT-4 is a direct consequence of the `runValidators` hole fixed in Phase 1 — while it
 existed, invalid statuses could reach the database and vanish from every aggregate.
@@ -135,31 +139,28 @@ existed, invalid statuses could reach the database and vanish from every aggrega
 | R-REM-4 | `= 1` → **Due Tomorrow** |
 | R-REM-5 | Reminders are suppressed entirely when `status === 'completed'` |
 | R-REM-6 | A completed task is never labelled Overdue, even with a long-past deadline |
-| R-REM-7 | Reminders are **display-only**. They are not notifications and do not use the Notification API ⬜ Phase 2 |
+| R-REM-7 | Reminders are **display-only**. They are not notifications and do not use the Notification API — still true, and still deliberate |
 
 ---
 
 ## 7. Phase 2 Rules
 
-Introduced with their respective models. Recorded here so the rules are decided before the
-code forces decisions.
-
 | Rule | Domain | Statement | Schema | Behaviour |
 |---|---|---|---|---|
-| R-RECUR-1 | Recurring tasks | Completing a recurring task creates the next occurrence with an advanced deadline | ✅ 2.1 | ⬜ 2.2 |
-| R-RECUR-2 | Recurring tasks | Missed occurrences collapse into one instance, never a backlog of stale duplicates | ✅ 2.1 | ⬜ 2.2 |
-| R-SUB-1 | Subtasks | A task is `completed` only when its subtasks are all complete, unless explicitly overridden | ✅ 2.1 | ⬜ 2.2 |
-| R-HAB-1 | Habits | A habit's streak counts consecutive *scheduled* occurrences met, not consecutive calendar days | ✅ 2.1 | ⬜ 2.2 |
-| R-HAB-2 | Habits | A habit with cadence "3× per week" is not broken by a missed Monday | ✅ 2.1 | ⬜ 2.2 |
+| R-RECUR-1 | Recurring tasks | Completing a recurring task creates the next occurrence with an advanced deadline | ✅ 2.1 | ✅ 2.2 — `materialiseNextOccurrence` in `recurrence.service.js` |
+| R-RECUR-2 | Recurring tasks | Missed occurrences collapse into one instance, never a backlog of stale duplicates | ✅ 2.1 | ✅ 2.2 — `nextFutureDeadline` compares day keys |
+| R-SUB-1 | Subtasks | A task is `completed` only when its subtasks are all complete, unless explicitly overridden | ✅ 2.1 | ⬜ not implemented — the "unless overridden" half was never specified, so enforcing the first half would make some legitimate completions impossible |
+| R-HAB-1 | Habits | A habit's streak counts consecutive *scheduled* occurrences met, not consecutive calendar days | ✅ 2.1 | ✅ 2.2 — `habit.service.js` `computeStreak` |
+| R-HAB-2 | Habits | A habit with cadence "3× per week" is not broken by a missed Monday | ✅ 2.1 | ✅ 2.2 — consequence of R-HAB-1's scheduled-occurrence walk |
 | R-FOCUS-10 | Focus | A focus session with no task link still counts toward total time but not toward task effort | ⬜ later | ⬜ later |
 | R-RANK-1 | Scoring ⬜ | Rank is 1 + count of strictly higher scores. Ties share a rank | ⬜ later | ⬜ later |
-| R-GOAL-1 | Goals | A goal's progress is the percentage of its milestones completed, not its tasks | ✅ 2.1 | ⬜ 2.2 |
+| R-GOAL-1 | Goals | A goal's progress is the percentage of its milestones completed, not its tasks | ✅ 2.1 | ✅ 2.2 — `goal.service.js` `progressFor` / `progressForMany` |
 | R-ENTITLE-1 | Billing ⬜ | Plan limits are enforced server-side. The client hides features but never gates them | ⬜ later | ⬜ later |
 
-**"Schema" means the storage exists and is enforced by the database. It does not mean the
-rule runs.** Module 2.1 added the collections and the validators; the services that advance
-a recurrence, count a streak and derive a goal's progress arrive in 2.2. Every rule above
-therefore still needs its 2.2 half before it can be called working.
+**"Schema" means the storage exists and is enforced by the database. "Behaviour" means a
+service actually applies the rule on read or on write.** Every rule above now has both
+halves except R-SUB-1, whose override semantics need a decision before it can be
+implemented honestly.
 
 ---
 

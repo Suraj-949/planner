@@ -97,7 +97,7 @@ test('createTask applies the documented defaults', async () => {
     assert.equal(res.statusCode, 201);
     assert.equal(res.body.data.task.status, 'pending');
     assert.equal(res.body.data.task.priority, 'medium');
-    assert.equal(res.body.data.task.category, 'other');
+    assert.equal(res.body.data.task.category, 'personal');
 });
 
 test('createTask rejects a blank title with 400', async () => {
@@ -111,7 +111,7 @@ test('createTask persists the dashboard fields end to end', async () => {
     const res = await call(createTask, {
         user: ALICE,
         body: validTask({
-            context: 'Planner Core',
+            category: 'office-work',
             estimateMinutes: 105,
             tags: ['  Auth ', 'auth', 'Security'],
             subtasks: ['Draft the outline', { title: 'Review with the team', completed: true }],
@@ -124,7 +124,7 @@ test('createTask persists the dashboard fields end to end', async () => {
     // MongoDB actually holds, including the normalisation done before the write.
     const stored = await Task.findById(res.body.data.task._id);
 
-    assert.equal(stored.context, 'Planner Core');
+    assert.equal(stored.category, 'office-work');
     assert.equal(stored.estimateMinutes, 105);
     assert.equal(typeof stored.estimateMinutes, 'number');
     assert.deepEqual(stored.tags, ['auth', 'security']);
@@ -139,18 +139,24 @@ test('createTask persists the dashboard fields end to end', async () => {
     assert.equal(stored.subtasks[0]._id, undefined);
 });
 
-test('createTask omits context rather than guessing one', async () => {
-    const res = await call(createTask, { user: ALICE, body: validTask() });
-    const stored = await Task.findById(res.body.data.task._id);
+test('createTask accepts a custom category from the form\'s Custom option', async () => {
+    // The Custom option stores whatever the user typed; anything outside the presets is a
+    // legitimate value, not a validation failure.
+    const res = await call(createTask, {
+        user: ALICE,
+        body: validTask({ category: 'client: Acme' }),
+    });
 
     assert.equal(res.statusCode, 201);
-    assert.equal(stored.context, undefined);
+
+    const stored = await Task.findById(res.body.data.task._id);
+    assert.equal(stored.category, 'client: Acme');
 });
 
-test('createTask rejects an unknown project and writes nothing', async () => {
+test('createTask rejects a blank category and writes nothing', async () => {
     const result = await call(createTask, {
         user: ALICE,
-        body: validTask({ context: 'Some New Project' }),
+        body: validTask({ category: '   ' }),
     });
 
     assertFails(result, 400);
@@ -313,17 +319,19 @@ test('runValidators is load-bearing: it blocks the write that the validator woul
     );
     assert.equal(unguarded.priority, 'urgent', 'without the option Mongo accepts the bad value');
 
+    // `status` rather than `category`: category is a free string by design, so the schema
+    // no longer has an enum to reject a value with — only the length bound.
     await assert.rejects(
         Task.findOneAndUpdate(
             { _id: id },
-            { $set: { category: 'Marketing' } },
+            { $set: { status: 'archived' } },
             { returnDocument: 'after', runValidators: true }
         ),
         /validation/i
     );
 
     const stored = await Task.findById(id);
-    assert.equal(stored.category, 'other', 'the guarded write must not land');
+    assert.equal(stored.status, 'pending', 'the guarded write must not land');
 });
 
 /*
@@ -340,6 +348,12 @@ test('the schema enforces the same title limit as the validator', async () => {
 
     await assert.rejects(
         Task.create({ ...validTask(), description: 'y'.repeat(5001), userId: ALICE }),
+        /validation/i
+    );
+
+    // Category is free text, so its length bound is the only thing `runValidators` guards.
+    await assert.rejects(
+        Task.create({ ...validTask({ category: 'z'.repeat(41) }), userId: ALICE }),
         /validation/i
     );
 

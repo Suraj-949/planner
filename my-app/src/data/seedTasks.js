@@ -2,7 +2,7 @@
 
 // Field notes:
 //  - `id`        stable client key
-//  - `context`   project the task belongs to
+//  - `category`  one of the TASK_CATEGORIES presets, or a custom label
 //  - `estimate`  formatted duration string, matching the reference
 //  - `due`       pre-formatted label; a real integration should format from `deadline`
 //  - `tags`      matched by the free-text filter
@@ -12,7 +12,7 @@ export const SEED_TASKS = [
     {
         id: 'seed-1',
         title: 'Complete React Authentication',
-        context: 'Planner Core',
+        category: 'side hustle',
         estimate: '1h 30m',
         priority: 'high',
         status: 'in-progress',
@@ -23,7 +23,7 @@ export const SEED_TASKS = [
     {
         id: 'seed-2',
         title: 'Draft Product Roadmap Q3',
-        context: 'Strategy 2025',
+        category: 'office-work',
         estimate: '45m',
         priority: 'medium',
         status: 'pending',
@@ -34,7 +34,7 @@ export const SEED_TASKS = [
     {
         id: 'seed-3',
         title: 'Design System Icon Audit',
-        context: 'Obsidian UI',
+        category: 'side hustle',
         estimate: '30m',
         priority: 'low',
         status: 'pending',
@@ -45,7 +45,7 @@ export const SEED_TASKS = [
     {
         id: 'seed-4',
         title: 'Database schema migration for habits streak tracking',
-        context: 'Planner Core',
+        category: 'side hustle',
         estimate: '2h 15m',
         priority: 'high',
         status: 'in-progress',
@@ -56,7 +56,7 @@ export const SEED_TASKS = [
     {
         id: 'seed-5',
         title: 'Write unit tests for pomodoro focus timer',
-        context: 'Planner Core',
+        category: 'side hustle',
         estimate: '1h 00m',
         priority: 'medium',
         status: 'pending',
@@ -67,7 +67,7 @@ export const SEED_TASKS = [
     {
         id: 'seed-6',
         title: 'Optimize PostgreSQL queries for analytics dashboard',
-        context: 'Infrastructure',
+        category: 'side hustle',
         estimate: '3h 00m',
         priority: 'high',
         status: 'pending',
@@ -81,7 +81,7 @@ export const SEED_COMPLETED = [
     {
         id: 'seed-done-1',
         title: 'Review Pull Request #42',
-        context: 'Planner Core',
+        category: 'office-work',
         estimate: '25m',
         priority: 'medium',
         status: 'completed',
@@ -92,7 +92,7 @@ export const SEED_COMPLETED = [
     {
         id: 'seed-done-2',
         title: 'Sync with Engineering Leads',
-        context: 'Strategy 2025',
+        category: 'office-work',
         estimate: '30m',
         priority: 'low',
         status: 'completed',

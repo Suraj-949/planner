@@ -1,5 +1,5 @@
 import Input from '../ui/Input'
-import { TASK_FILTERS, VIEW_MODES, PROJECTS } from '../../constants/taskMeta'
+import { TASK_FILTERS, VIEW_MODES, TASK_CATEGORIES, CATEGORY_LABELS } from '../../constants/taskMeta'
 import { LayoutList, KanbanSquare, CalendarDays } from 'lucide-react'
 
 const VIEW_ICONS = {
@@ -147,17 +147,17 @@ const Filters = ({
                         <option value="low">Low</option>
                     </select>
 
-                    <span className="label-xs">Project</span>
+                    <span className="label-xs">Category</span>
                     <select
                         value={category}
                         onChange={(event) => onCategoryChange(event.target.value)}
-                        aria-label="Filter by project"
+                        aria-label="Filter by category"
                         className={SELECT_CLASS}
                     >
                         <option value="all">All</option>
-                        {PROJECTS.map((project) => (
-                            <option key={project} value={project}>
-                                {project}
+                        {TASK_CATEGORIES.map((value) => (
+                            <option key={value} value={value}>
+                                {CATEGORY_LABELS[value] ?? value}
                             </option>
                         ))}
                     </select>

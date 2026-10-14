@@ -40,7 +40,7 @@ const Register = () => {
 
             // `login` stores the token and flips the auth flag, so the two can't drift.
             login(response.data.accessToken)
-            navigate('/tasks')
+            navigate('/dashboard')
 
         } catch (err) {
             const message =

@@ -135,6 +135,31 @@ const getTasks = asyncHandler(async (req, res) => {
     });
 });
 
+/*
+ * A single task.
+ *
+ * The list endpoint cannot serve this: it paginates, so a task that has fallen off the
+ * current page has no way to be reached by id, and the detail view is where a user lands
+ * from a deep link or a search result.
+ */
+const getTask = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+
+    if (!isValidTaskId(id)) {
+        throw notFound('Task not found');
+    }
+
+    // Scoped by userId, so a valid id belonging to someone else is a 404 rather than a
+    // 403 — the resource is treated as not existing, which does not confirm the id was real.
+    const task = await Task.findOne({ _id: id, userId: req.user }).lean();
+
+    if (!task) {
+        throw notFound('Task not found');
+    }
+
+    ok(res, 200, { message: 'Task fetched successfully', task });
+});
+
 const updateTask = asyncHandler(async (req, res) => {
     const { id } = req.params;
 
@@ -272,6 +297,7 @@ const getTaskStreak = asyncHandler(async (req, res) => {
 
 module.exports = {
     createTask,
+    getTask,
     getTasks,
     updateTask,
     deleteTask,

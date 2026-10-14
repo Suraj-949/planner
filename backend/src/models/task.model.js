@@ -1,13 +1,12 @@
 const mongoose = require('mongoose');
 const {
     TASK_STATUSES,
-    TASK_CATEGORIES,
     TASK_PRIORITIES,
-    TASK_CONTEXTS,
     RECURRENCE_FREQUENCIES,
     MAX_TITLE_LENGTH,
     MAX_DESCRIPTION_LENGTH,
     MAX_SUBTASK_TITLE_LENGTH,
+    MAX_CATEGORY_LENGTH,
     MAX_ESTIMATE_MINUTES,
     MAX_ACTUAL_MINUTES,
     MAX_NOTES_LENGTH,
@@ -108,21 +107,22 @@ const taskSchema = new mongoose.Schema({
         ref: 'User',
         required: true
     },
+    /*
+     * A bounded free string rather than an enum: the form offers the presets in
+     * TASK_CATEGORIES plus a "Custom" option that stores the user's own label, so a closed
+     * enum would reject the very value the custom field exists to capture. `runValidators`
+     * still guards the length.
+     */
     category: {
-        type : String,
-        enum: TASK_CATEGORIES,
-        default: 'other'
+        type: String,
+        trim: true,
+        maxlength: MAX_CATEGORY_LENGTH,
+        default: 'personal'
     },
     priority: {
         type: String,
         enum: TASK_PRIORITIES,
         default: "medium",
-    },
-    // Which project the task belongs to. Optional on purpose: it has no meaningful default,
-    // and guessing one would file a task under the wrong project.
-    context: {
-        type: String,
-        enum: TASK_CONTEXTS,
     },
     /*
      * Where the task sits in the Phase 2 hierarchy. Both optional, and both nullable so a
@@ -192,10 +192,11 @@ const taskSchema = new mongoose.Schema({
 taskSchema.index({ userId: 1 }, { background: true });
 taskSchema.index({ userId: 1, dateCreated: -1 }, { background: true });
 
-// `context` backs the dashboard's project filter, `tags` backs its free-text search. Both are
-// user-scoped, so they lead with userId. Only one array field is indexed — MongoDB refuses to
-// build a compound multikey index across two arrays, which rules out `subtasks` here.
-taskSchema.index({ userId: 1, context: 1 }, { background: true });
+// `category` backs the dashboard's category filter, `tags` backs its free-text search. Both
+// are user-scoped, so they lead with userId. Only one array field is indexed — MongoDB
+// refuses to build a compound multikey index across two arrays, which rules out `subtasks`
+// here.
+taskSchema.index({ userId: 1, category: 1 }, { background: true });
 taskSchema.index({ userId: 1, tags: 1 }, { background: true });
 
 /*

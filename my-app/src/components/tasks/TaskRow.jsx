@@ -1,6 +1,7 @@
 import Badge from '../ui/Badge'
 import Checkbox from '../ui/Checkbox'
-import { STATUS_LABELS, STATUS_DOT } from '../../constants/taskMeta'
+import { CATEGORY_LABELS, STATUS_LABELS, STATUS_DOT } from '../../constants/taskMeta'
+import { Link } from 'react-router-dom'
 import { Timer, Play, Check, Pencil, Trash2 } from 'lucide-react'
 
 // The final 84px column is the actions cell. It was named in the header (COLUMNS ends with
@@ -37,19 +38,25 @@ const TaskRow = ({ task, onToggle, onStartFocus, onEdit, onDelete, canMutate = t
 
             <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                    <span
-                        className={`truncate text-sm ${
+                    {/*
+                        The title opens the detail view. It is the only affordance that fits
+                        in a row this dense, and it is where a user lands from a search
+                        result or a deep link.
+                    */}
+                    <Link
+                        to={`/tasks/${task.id}`}
+                        className={`truncate text-sm hover:underline hover:underline-offset-2 ${
                             completed
                                 ? 'text-content-subtle line-through decoration-content-subtle'
                                 : 'font-medium text-content'
                         }`}
                     >
                         {task.title}
-                    </span>
+                    </Link>
                 </div>
 
                 <div className="mt-1 flex items-center gap-2 text-[11px] text-content-subtle">
-                    <span className="truncate">{task.context}</span>
+                    <span className="truncate">{CATEGORY_LABELS[task.category] ?? task.category}</span>
                     <span aria-hidden="true">·</span>
                     <span className="inline-flex items-center gap-1 tabular-nums">
                         <Timer className="h-3 w-3" strokeWidth={1.8} />
@@ -99,8 +106,8 @@ const TaskRow = ({ task, onToggle, onStartFocus, onEdit, onDelete, canMutate = t
 
             {/*
                 Actions are withheld while the list is standing in for a failed request: the
-                rows are module-scope placeholders, so editing or deleting one would change
-                nothing server-side and would look like a silent no-op.
+                rows are the previous response, so editing or deleting one would be reverted
+                by the next successful load and would look like a silent no-op.
             */}
             <div className="flex items-center justify-end gap-0.5">
                 {canMutate && (

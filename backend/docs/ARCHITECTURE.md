@@ -239,7 +239,7 @@ untouched and non-browser API clients keep working. Full rationale is in R-CSRF-
 - **Derived over stored** — anything computable is computed on read. A Goal therefore has no
   `progress` field at all, and a Habit stores completion rows rather than a streak counter.
 - **Index what you query** — `tasks.userId`, and the compound `{ userId, dateCreated }` that
-  backs the list sort. Phase 2.1 adds `{ userId, context }`, `{ userId, tags }`,
+  backs the list sort. Phase 2.1 adds `{ userId, category }`, `{ userId, tags }`,
   `{ userId, projectId }` and `{ userId, goalId }` for the dashboard filters.
 - **Tenancy in one place per document** — `userId` is on Goal, Project and HabitCompletion;
   Milestone has none and reaches its owner through `goalId`. A second copy is a second thing
@@ -303,8 +303,8 @@ Node's built-in runner is the only harness.
 
 | File | Tests | Scope |
 |---|---|---|
-| `tests/taskValidation.test.js` | 31 | Required fields, enums, empty-string enums, trimming, unknown fields, `context`/`estimateMinutes`/`tags`/`subtasks` rules, local-noon anchoring, a 10-timezone rendering matrix, plus `recurrence`/`projectId`/`goalId`/`actualMinutes`/`notes` |
-| `tests/phase2Models.test.js` | 25 | Schema contracts for Goal, Milestone, Project, Habit and HabitCompletion; index declarations; the derive-never-store and single-source-of-enums invariants |
+| `tests/taskValidation.test.js` | 30 | Required fields, enums, empty-string enums, trimming, unknown fields, `category`/`estimateMinutes`/`tags`/`subtasks` rules, local-noon anchoring, a 10-timezone rendering matrix, plus `recurrence`/`projectId`/`goalId`/`actualMinutes`/`notes` |
+| `tests/phase2Models.test.js` | 26 | Schema contracts for Goal, Milestone, Project, Habit and HabitCompletion; index declarations; the derive-never-store and single-source-of-enums invariants |
 | `tests/task.controller.test.js` | 25 | CRUD against a real database, per-user isolation, update-returns-post-image, envelope shape, default values, dashboard-field round-trip, `$unset` clearing |
 | `tests/dates.test.js` | 16 | Local-noon anchoring, day-key round trips, month-end and year-end rollover, month clamping, and a DST matrix proving a 23- or 25-hour day still reports the right calendar date |
 | `tests/recurrence.test.js` | 20 | Daily/weekly/monthly advancement, interval handling, invalid input, and R-RECUR-2's collapse of missed occurrences into one future task |

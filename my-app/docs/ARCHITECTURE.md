@@ -16,8 +16,8 @@ Related:
 ```text
 ┌─────────────────────────────────────────────────────────────┐
 │  CLIENT — React 19 + Vite 8 (SPA)                           │
-│  Pages/Routes ──► Components ──► Hooks ──► Axios            │
-│  localStorage: accessToken, pomodoro state, streak (legacy)  │
+│  Pages ──► Components ──► Hooks ──► Services ──► Axios      │
+│  localStorage: accessToken, pomodoro session                │
 └──────────────────────────────┬──────────────────────────────┘
                                │  HTTPS / JSON
                                ▼  Express API — see backend docs
@@ -43,32 +43,57 @@ my-app/
     ├── PrivateRoute.jsx
     │
     ├── constants/
-    │   ├── navigation.js          # sidebar nav items
-    │   └── taskMeta.js            # enums, labels, colour variants
+    │   ├── navigation.js          # routes, PAGE_TITLES, titleForPath
+    │   ├── taskMeta.js            # task enums, labels, recurrence helpers
+    │   ├── goalMeta.js            # goal statuses, progress tone
+    │   ├── habitMeta.js           # cadences, target bounds
+    │   └── projectMeta.js         # colour palette for the picker
     │
     ├── context/
     │   └── AuthContext.js         # split out to fix the react-refresh warning
+    │
     ├── hooks/
-    │   └── useAuth.js
+    │   ├── useAuth.js
+    │   ├── useResource.js         # one async resource: isLoading / error / data
+    │   ├── useTasks.js            # useTasks, useTask, useStreak, useStats, actions
+    │   ├── useGoals.js            # goals + milestones
+    │   ├── useProjects.js
+    │   └── useHabits.js           # habits + per-habit history
+    │
+    ├── services/                  # one module per domain, no axios outside http.js
+    │   ├── http.js                # toQuery + get/post/put/patch/del
+    │   ├── tasks.js
+    │   ├── goals.js
+    │   ├── milestones.js
+    │   ├── projects.js
+    │   └── habits.js
     │
     ├── pages/
-    │   ├── TasksPage.jsx          # main dashboard
+    │   ├── DashboardPage.jsx
+    │   ├── TasksPage.jsx
+    │   ├── TaskDetailPage.jsx
+    │   ├── ProjectsPage.jsx
+    │   ├── ProjectDetailPage.jsx
+    │   ├── GoalsPage.jsx
+    │   ├── GoalDetailPage.jsx
+    │   ├── HabitsPage.jsx
+    │   ├── PlannerPage.jsx
+    │   ├── CalendarPage.jsx
+    │   ├── FocusPage.jsx
+    │   ├── AnalyticsPage.jsx
     │   └── NotFound.jsx
     │
     ├── components/
-    │   ├── layout/                # Sidebar, Header
-    │   ├── tasks/                 # Filters, TaskList, TaskRow, CreateTaskPanel
-    │   ├── ui/                    # Badge, Button, Input, Label, Checkbox
-    │   ├── Register.jsx
-    │   ├── CreateTask.jsx
-    │   ├── FetchTask.jsx
-    │   ├── UpdateTaskModal.jsx
-    │   └── PomodoroTimer.jsx
+    │   ├── layout/                # AppShell, Sidebar, Header
+    │   ├── tasks/                 # Filters, TaskList, TaskRow, TaskFormPanel
+    │   ├── ui/                    # Badge, Button, Checkbox, ConfirmDialog,
+    │   │                          # EmptyState, Input, Label, LoadingRow, Modal,
+    │   │                          # Notice, ProgressBar, StatCard
+    │   └── Register.jsx           # the auth screen (login + register)
     │
-    ├── data/
-    │   └── seedTasks.js
     └── utils/
-        ├── dates.js               # local date parsing, formatDateKey
+        ├── dates.js               # local day keys, daysBetween, getReminder
+        ├── taskAdapter.js         # API task → view task
         └── jwt.js                 # decode exp
 ```
 
@@ -85,11 +110,11 @@ App.jsx (route table, providers)
                       └─ axiosInstance.js  auth + refresh interceptors
 ```
 
-**Components never call `axiosInstance` directly.** Every network call should go through a
-service module so endpoint changes, caching, and error normalisation happen in one place.
-
-Currently `CreateTask` and `FetchTask` call axios inline — this is the main structural debt,
-and the Phase 2 fix.
+**Components never call `axiosInstance` directly.** Every network call goes through a
+service module, so endpoint changes and error normalisation happen in one place. This was
+the main structural debt of the pre-Phase-2 build — `CreateTask` and `FetchTask` called
+axios inline — and both components have since been deleted along with the pages that
+replaced them.
 
 ---
 
@@ -132,15 +157,16 @@ returns a bare object, the interceptor passes it through untouched.
 | Shared | Context | Authentication only |
 | Server | Service + hook | Anything the API owns |
 
-**Server state is not duplicated into Context.** Task lists live in the component that
-renders them. Adding a global cache (TanStack Query) is justified in Phase 2 — nothing needs
-a cache layer yet.
+**Server state is not duplicated into Context, and there is no client-side cache.** Every
+list is fetched through `useResource`, which re-runs its loader when the query changes and
+exposes `refetch` for the caller to reconcile after a mutation. The queries themselves are
+built server-side — filters, search, sort and pagination ride on the request rather than
+narrowing a downloaded collection in the browser — so there is little left for a cache to
+save. Adding TanStack Query would still be justified if request duplication ever becomes a
+measurable problem; it is not needed to keep the UI honest today.
 
-Auth context is the one legitimate exception, since identity gates routing.
-
-**The dashboard currently does not use the task API.** `TasksPage` seeds from
-`data/seedTasks.js` and mutates local state. This keeps the UI buildable and reviewable in
-isolation, and it is the main thing wiring the dashboard to the API changes.
+Auth context is the one legitimate exception to "no shared client state", since identity
+gates routing.
 
 ---
 
@@ -148,15 +174,26 @@ isolation, and it is the main thing wiring the dashboard to the API changes.
 
 ```text
 /                    Register (doubles as login, no guard)
+/dashboard           PrivateRoute → DashboardPage
 /tasks               PrivateRoute → TasksPage
-/create-task         PrivateRoute → CreateTask
-/timer               PrivateRoute → PomodoroTimer
+/tasks/:id           PrivateRoute → TaskDetailPage
+/projects            PrivateRoute → ProjectsPage
+/projects/:id        PrivateRoute → ProjectDetailPage
+/goals               PrivateRoute → GoalsPage
+/goals/:id           PrivateRoute → GoalDetailPage
+/habits              PrivateRoute → HabitsPage
+/planner             PrivateRoute → PlannerPage
+/calendar            PrivateRoute → CalendarPage
+/focus               PrivateRoute → FocusPage
+/analytics           PrivateRoute → AnalyticsPage
+/create-task         redirect → /tasks     (legacy bookmark)
+/timer               redirect → /focus     (legacy bookmark)
 *                    NotFound
 ```
 
 `PrivateRoute` decodes the JWT `exp` claim rather than only checking that a token key exists,
 so an expired token redirects instead of stranding the user on a page whose every request
-401s.
+401s. Successful login lands on `/dashboard`.
 
 The client guard is a UX affordance — the server middleware is the actual security boundary.
 
@@ -320,10 +357,12 @@ padding, information-dense rows.
 
 ## 9. Testing
 
-No client test runner is configured. `npm run lint` and `npm run build` both pass.
+No client test runner is configured. `npm run lint` and `npm run build` both pass, and CI
+runs exactly those two plus the backend suite.
 
-Worth adding in Phase 2: Vitest for `utils/dates.js` in particular, since its local-date
-behaviour is the subtlest logic in the app and a regression there is silent.
+Worth adding: Vitest for `utils/dates.js` in particular — its local-date behaviour is the
+subtlest logic in the app and a regression there is silent. The hooks would be the next
+candidate, since `useResource`'s three-state contract is what every page depends on.
 
 ---
 

@@ -154,31 +154,54 @@ planner/
     │   └── BUSINESS-LOGIC.md
     └── src/
         ├── main.jsx              # BrowserRouter + AuthProvider
-        ├── App.jsx               # Route definitions
+        ├── App.jsx               # Route table (12 guarded pages + 2 legacy redirects)
         ├── AuthProvider.jsx      # Auth context, backed by token expiry
         ├── PrivateRoute.jsx      # Client-side route guard
         ├── axiosInstance.js      # Axios + auth/refresh interceptors + envelope unwrap
         ├── index.css             # @import "tailwindcss" + @theme design tokens
         ├── context/AuthContext.js # Context object, split from the provider
-        ├── hooks/useAuth.js      # Consumer hook for auth state
         ├── constants/
-        │   ├── navigation.js     # Sidebar nav items
-        │   └── taskMeta.js       # Enums, labels, colour variants
+        │   ├── navigation.js     # Routes, PAGE_TITLES, titleForPath
+        │   ├── taskMeta.js       # Task enums, labels, recurrence helpers
+        │   ├── goalMeta.js       # Goal statuses, progress tone
+        │   ├── habitMeta.js      # Cadences, target bounds
+        │   └── projectMeta.js    # Project colour palette
+        ├── hooks/
+        │   ├── useAuth.js
+        │   ├── useResource.js    # One async resource: isLoading / error / data
+        │   ├── useTasks.js       # Tasks, task, streak, stats, mutations
+        │   ├── useGoals.js       # Goals + milestones
+        │   ├── useProjects.js
+        │   └── useHabits.js      # Habits + per-habit history
+        ├── services/             # One module per domain; no axios outside http.js
+        │   ├── http.js           # toQuery + get/post/put/patch/del
+        │   ├── tasks.js
+        │   ├── goals.js
+        │   ├── milestones.js
+        │   ├── projects.js
+        │   └── habits.js
         ├── pages/
-        │   ├── TasksPage.jsx     # Main dashboard
+        │   ├── DashboardPage.jsx # Overdue/today/streak at a glance
+        │   ├── TasksPage.jsx     # Server-side search, filter, sort, pagination
+        │   ├── TaskDetailPage.jsx
+        │   ├── ProjectsPage.jsx / ProjectDetailPage.jsx
+        │   ├── GoalsPage.jsx / GoalDetailPage.jsx
+        │   ├── HabitsPage.jsx
+        │   ├── PlannerPage.jsx   # Mon–Sun week grid
+        │   ├── CalendarPage.jsx  # Month grid + selected-day drawer
+        │   ├── FocusPage.jsx     # Pomodoro timer (survives reload)
+        │   ├── AnalyticsPage.jsx # Windowed aggregates + status mix
         │   └── NotFound.jsx
         ├── components/
-        │   ├── layout/           # Sidebar, Header
-        │   ├── tasks/            # Filters, TaskList, TaskRow, CreateTaskPanel
-        │   ├── ui/               # Badge, Button, Input, Label, Checkbox
-        │   ├── Register.jsx        # Combined sign-up / login screen
-        │   ├── CreateTask.jsx      # Create form + progress tracker + streak card
-        │   ├── FetchTask.jsx       # Task list, reminders, stats, delete
-        │   ├── UpdateTaskModal.jsx # Full-task edit modal
-        │   └── PomodoroTimer.jsx   # 25/5 timer, survives page reload
-        ├── data/seedTasks.js      # Dashboard seed content
+        │   ├── layout/           # AppShell, Sidebar, Header
+        │   ├── tasks/            # Filters, TaskList, TaskRow, TaskFormPanel
+        │   ├── ui/               # Badge, Button, Checkbox, ConfirmDialog,
+        │   │                     # EmptyState, Input, Label, LoadingRow, Modal,
+        │   │                     # Notice, ProgressBar, StatCard
+        │   └── Register.jsx      # Combined sign-up / login screen
         └── utils/
-            ├── dates.js          # Local date parsing + shared formatDateKey
+            ├── dates.js          # Local day keys, daysBetween, getReminder
+            ├── taskAdapter.js    # API task → view task
             └── jwt.js            # Decode exp claim
 ```
 
@@ -414,9 +437,8 @@ valid id cannot be used to probe for someone else's data.
 | `description` | String | no | — | ≤ 5000 chars |
 | `status` | String | no | `pending` | `pending` \| `in-progress` \| `completed` |
 | `deadline` | Date | yes | — | anchored at local noon — see BUSINESS-LOGIC §3.3 |
-| `category` | String | no | `other` | `DSA` \| `development` \| `college` \| `personal` \| `work` \| `other` |
+| `category` | String | no | `personal` | free text ≤ 40 chars; form offers `personal` \| `learning` \| `office-work` \| `side hustle` plus Custom |
 | `priority` | String | no | `medium` | `high` \| `medium` \| `low` |
-| `context` | String | no | — | project name, no default |
 | `projectId` | ObjectId → `Project` | no | — | unset by default |
 | `goalId` | ObjectId → `Goal` | no | — | denormalised from the project |
 | `recurrence` | Subdocument | no | — | `{ freq, interval, daysOfWeek }`, absent when not recurring |
@@ -506,40 +528,39 @@ would need decrement logic that can be wrong.
 
 ### Authentication
 `Register.jsx` is one component toggling between sign-up and login, with a password
-visibility toggle, submit spinner, and error display.
+visibility toggle, submit spinner, and error display. A successful sign-in lands on
+`/dashboard`; the access token lives in `localStorage` and the refresh cookie is HTTP-only.
 
 ### Task management
-Full CRUD. `CreateTask.jsx` is the de-facto dashboard holding the create form, progress
-card, and streak card. `FetchTask.jsx` renders the list and handles delete. Deletion
-requires confirmation.
-
-### Progress tracker
-Stats are computed from the fetched tasks and passed up via `onStatsChange`. Four counters
-— total, completed, in-progress, pending — plus a completion-rate bar.
-
-> The completion rate currently spans **all** tasks with no date window, so it is a
-> lifetime figure that can only ever dilute. Period scoping is a Phase 2 item.
+Full CRUD, server-side. `TasksPage` queries `/api/tasks/fetch` with search, filters, sort
+and pagination, so the response is only what fits on screen. `TaskFormPanel` is one form
+for both creating and editing. Deletion requires confirmation.
 
 ### Streak
-`updateStreak.js` increments a counter when a task transitions into `completed`, using
-local-time day keys. Same-day repeats are a no-op, so completing several tasks in one day
-counts once. Re-saving an already-completed task does not increment.
+Derived on the server from `Task.completedAt`, scoped per user, exposed at
+`/api/tasks/streak` and rendered on the dashboard and in the sidebar badge. Same-day
+repeats count once; reopening a task does not decrement history.
 
-> The streak lives **only in `localStorage`** — not in the database, not scoped per user,
-> and never cleared on logout. Two people sharing a browser inherit each other's streak.
-> Moving it server-side is a Phase 2 item.
+### Recurrence
+Completing a recurring task materialises the next occurrence at its next future slot,
+collapsing missed periods into one non-overdue instance. The follow-on task comes back on
+the create response as `nextTask`.
 
-### Reminders
-Derived badges on each task card, computed from the whole-day difference between the
-deadline and today: `< 0` Overdue, `= 0` Due Today, `= 1` Due Tomorrow. Suppressed for
-completed tasks. Display-only — no browser notifications.
+### Goals, milestones, projects and habits
+Each has a CRUD API and a list + detail page. A goal's progress is the percentage of its
+milestones that are complete — derived on read, never stored. A project is archived rather
+than deleted so its tasks keep a parent. Habit streaks are computed over scheduled
+occurrences, so a "3× per week" habit survives a missed Monday.
 
-### Pomodoro timer
-A 25-minute focus / 5-minute break timer at `/timer`. State lives in `localStorage` and an
-absolute `endTime` epoch means a reload mid-session resumes with the correct remaining time.
+### Planner, calendar and focus
+The planner shows Monday–Sunday with tasks bucketed by local day key; the calendar shows
+the month with a selected-day drawer. `/focus` is the 25/5 Pomodoro timer, restored from
+an absolute end time so a reload mid-session resumes correctly.
 
-### Toasts
-Create, update, and delete each surface a banner that auto-clears after three seconds.
+### Analytics
+Window-scoped aggregates — 7, 30 or 90 days, or all time — for totals, completion rate,
+overdue count and a status-mix bar. Nothing is stored; every figure is recomputed from the
+tasks themselves.
 
 ---
 
@@ -548,8 +569,20 @@ Create, update, and delete each surface a banner that auto-clears after three se
 | Path | Guard | Component |
 |---|---|---|
 | `/` | none | `Register` — doubles as login |
-| `/create-task` | `PrivateRoute` | `CreateTask` |
-| `/timer` | `PrivateRoute` | `PomodoroTimer` |
+| `/dashboard` | `PrivateRoute` | `DashboardPage` |
+| `/tasks` | `PrivateRoute` | `TasksPage` |
+| `/tasks/:id` | `PrivateRoute` | `TaskDetailPage` |
+| `/projects` | `PrivateRoute` | `ProjectsPage` |
+| `/projects/:id` | `PrivateRoute` | `ProjectDetailPage` |
+| `/goals` | `PrivateRoute` | `GoalsPage` |
+| `/goals/:id` | `PrivateRoute` | `GoalDetailPage` |
+| `/habits` | `PrivateRoute` | `HabitsPage` |
+| `/planner` | `PrivateRoute` | `PlannerPage` |
+| `/calendar` | `PrivateRoute` | `CalendarPage` |
+| `/focus` | `PrivateRoute` | `FocusPage` |
+| `/analytics` | `PrivateRoute` | `AnalyticsPage` |
+| `/create-task` | none | redirect → `/tasks` (legacy bookmark) |
+| `/timer` | none | redirect → `/focus` (legacy bookmark) |
 | `*` | none | NotFound |
 
 ---
@@ -569,16 +602,23 @@ Full detail in [`DOMAIN.md` §5](./DOMAIN.md) and
 - Deadlines no longer shift a day in negative UTC offsets
 - Enum values can no longer be persisted as empty strings
 
+**Resolved in Phase 2**
+
+- Streak and progress statistics are server-side and derived, not client-side counters
+- Task list pagination — `page` / `limit` capped at 100, with a `meta` block
+- Completion rate is window-scoped rather than a lifetime figure
+- Goals, milestones, projects and habits have CRUD APIs and pages of their own
+
 **Open**
 
 - No server-side refresh-token revocation — a stolen access token is valid until it expires
 - No refresh token rotation or reuse detection
-- Streak and progress statistics are client-side only
-- No pagination — the task list is unbounded
-- No tests for controllers
-- No `helmet` or rate limiting on auth routes
+- Only the task controller has integration tests; goal, milestone, project and habit
+  controllers are covered indirectly through their validators and services
+- No `helmet` on the auth routes (rate limiting is present)
 - Deadline storage uses a noon anchor rather than a dedicated date type
 - Hardcoded CORS origin — not deployable to another frontend host without editing source
+- No frontend tests — lint and a build check only
 
 ---
 

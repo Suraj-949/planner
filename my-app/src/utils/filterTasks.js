@@ -15,7 +15,7 @@ const matchesQuery = (task, query) => {
 
     if (!needle) return true
 
-    return [task.title, task.context, task.status, task.priority, ...(task.tags ?? [])]
+    return [task.title, task.category, task.status, task.priority, ...(task.tags ?? [])]
         .join(' ')
         .toLowerCase()
         .includes(needle)
@@ -27,7 +27,7 @@ export const filterTasks = (tasks, { tab, query, status, priority, category, due
         if (!matchesQuery(task, query)) return false
         if (status !== 'all' && task.status !== status) return false
         if (priority !== 'all' && task.priority !== priority) return false
-        if (category !== 'all' && task.context !== category) return false
+        if (category !== 'all' && task.category !== category) return false
         if (dueDate && task.dayOffset !== Number(dueDate)) return false
 
         return true

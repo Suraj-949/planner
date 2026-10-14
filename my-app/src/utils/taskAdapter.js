@@ -4,9 +4,9 @@
 // presentation-ready values: a pre-formatted "Today, 5:00 PM" label, a whole-day offset, and
 // "1h 30m". The API returns raw data instead: an ISO timestamp, and a duration in minutes.
 //
-// The conversion lives here rather than in the components so that TaskRow, TaskList, the
-// filters and the free-text search all read one shape, and so the local SEED fallback stays
-// directly comparable to a fetched list — filterTasks and matchTaskId work on both unchanged.
+// The conversion lives here rather than in the components so that TaskRow, TaskList and the
+// detail view all read one shape, and so a task arriving from any endpoint (list, detail,
+// stats-adjacent refetch) is mapped the same way.
 
 import { daysBetween, startOfLocalDay, MONTHS } from './dates';
 
@@ -99,49 +99,37 @@ export const sumEstimates = (tasks) =>
 export const formatTotal = (tasks) => formatEstimate(sumEstimates(tasks));
 
 /*
- * Read id from whichever source a task came from.
+ * Id comparison that tolerates either the raw `_id` or the mapped `id`.
  *
- * The mismatch is load-bearing: `toggleTask` compares `task.id === id`, so the seed keys
- * ("seed-1") and the Mongo ObjectIds must both resolve through this one function or the
- * toggle checkbox silently does nothing.
+ * Tasks arrive as `{ _id }` from the API and as `{ id }` once mapped, so every toggle,
+ * edit and delete compares through here rather than with `===` against one shape.
  */
-export const matchTaskId = (task, id) => String(task.id) === String(id);
+export const matchTaskId = (task, id) => String(task.id ?? task._id) === String(id);
 
-/*
- * A local task carries the same presentation fields as a mapped API task, so it passes
- * through unchanged. Mapping it would try to read `deadline` off a record that only has the
- * pre-formatted `due`, and blank the estimate.
- */
-const isLocalSeedTask = (task) => typeof task.due === 'string' && task.deadline === undefined;
+export const toViewTask = (task) => ({
+    id: task._id ?? task.id,
+    title: task.title,
+    category: task.category ?? '',
+    estimate: formatEstimate(task.estimateMinutes),
+    estimateMinutes: estimateToMinutes(task.estimateMinutes),
+    priority: task.priority,
+    status: task.status,
+    due: formatDue(task.deadline),
+    dayOffset: toDayOffset(task.deadline),
+    tags: task.tags ?? [],
+    subtasks: task.subtasks ?? [],
 
-export const toViewTask = (task) => {
-    if (isLocalSeedTask(task)) return task
-
-    return {
-        id: task._id ?? task.id,
-        title: task.title,
-        context: task.context ?? '',
-        estimate: formatEstimate(task.estimateMinutes),
-        estimateMinutes: estimateToMinutes(task.estimateMinutes),
-        priority: task.priority,
-        status: task.status,
-        due: formatDue(task.deadline),
-        dayOffset: toDayOffset(task.deadline),
-        tags: task.tags ?? [],
-        subtasks: task.subtasks ?? [],
-
-        // Kept raw alongside the presentation fields above so the edit form can repopulate
-        // itself without re-fetching: dropping them here made a round-trip through the API
-        // the only way to open an existing task, and silently blanked every field the
-        // dashboard does not render.
-        description: task.description ?? '',
-        notes: task.notes ?? '',
-        deadline: task.deadline ?? null,
-        actualMinutes: task.actualMinutes ?? null,
-        recurrence: task.recurrence ?? null,
-        projectId: task.projectId ?? null,
-        goalId: task.goalId ?? null,
-    };
-};
+    // Kept raw alongside the presentation fields above so the edit form can repopulate
+    // itself without re-fetching: dropping them here made a round-trip through the API
+    // the only way to open an existing task, and silently blanked every field the
+    // dashboard does not render.
+    description: task.description ?? '',
+    notes: task.notes ?? '',
+    deadline: task.deadline ?? null,
+    actualMinutes: task.actualMinutes ?? null,
+    recurrence: task.recurrence ?? null,
+    projectId: task.projectId ?? null,
+    goalId: task.goalId ?? null,
+});
 
 export const toViewTasks = (tasks) => (Array.isArray(tasks) ? tasks : []).map(toViewTask);

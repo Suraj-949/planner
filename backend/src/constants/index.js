@@ -13,15 +13,18 @@
 // ---- Task ----------------------------------------------------------------
 
 const TASK_STATUSES = ['pending', 'in-progress', 'completed'];
-const TASK_CATEGORIES = ['DSA', 'development', 'college', 'personal', 'work', 'other'];
 const TASK_PRIORITIES = ['high', 'medium', 'low'];
 
 /*
- * Which piece of work this belongs to. Optional by design — `category` defaults to
- * 'other' because that is a real choice the user could have made, whereas any project
- * here would be a guess, and guessing files the task in the wrong place.
+ * The preset categories the UI offers. `category` itself is NOT enum-locked: the form has
+ * a "Custom" option that stores whatever the user types, so the schema holds a bounded
+ * free string and this list only drives the dropdown. Keeping it here means the form, the
+ * filter bar and any future client read one shared list.
  */
-const TASK_CONTEXTS = ['Planner Core', 'Obsidian UI', 'Strategy 2025', 'Infrastructure'];
+const TASK_CATEGORIES = ['personal', 'learning', 'office-work', 'side hustle'];
+
+// A category is a short label, not prose. One line in a dense row is all it ever gets.
+const MAX_CATEGORY_LENGTH = 40;
 
 // ---- Goal ----------------------------------------------------------------
 
@@ -91,7 +94,6 @@ module.exports = {
     TASK_STATUSES,
     TASK_CATEGORIES,
     TASK_PRIORITIES,
-    TASK_CONTEXTS,
     GOAL_STATUSES,
     RECURRENCE_FREQUENCIES,
     RECURRENCE_WEEKDAYS,
@@ -99,6 +101,7 @@ module.exports = {
     MAX_TITLE_LENGTH,
     MAX_DESCRIPTION_LENGTH,
     MAX_SUBTASK_TITLE_LENGTH,
+    MAX_CATEGORY_LENGTH,
     MAX_ESTIMATE_MINUTES,
     MAX_ACTUAL_MINUTES,
     MAX_TAG_COUNT,

@@ -19,7 +19,7 @@ the server wins.
 | `deadline` | Required, must parse | R-TASK-2 |
 | `status` | One of three options | R-TASK-3 |
 | `priority` | One of three options | R-TASK-4 |
-| `category` | One of six options | R-TASK-5 |
+| `category` | Presets + Custom (free text ≤ 40) | R-TASK-5 |
 | `password` (register) | ≥ 8 characters | Server-authoritative only |
 | `email` (register) | Basic shape check | Server-authoritative only |
 
@@ -76,21 +76,21 @@ used two different date normalisations and disagreed by a day behind UTC.
 
 ---
 
-## 5. What Runs Client-Side Today, and Why It Is Fragile
+## 5. What Runs Client-Side, and What Was Moved
 
-| Logic | Current location | Risk | Resolution |
-|---|---|---|---|
-| Streak | `localStorage` | Leaks across users, survives logout, lost on device change | Move server-side — Phase 2 |
-| Reminder labels | Derived in `FetchTask` | Duplicates date logic, will drift from any server version | Share one date util, then move server-side |
-| Completion rate | Derived in `FetchTask` | Lifetime-scoped, so it only ever dilutes | Period-scoped analytics — Phase 2 |
-| Pomodoro state | `localStorage` | Not visible on another device, lost if storage is cleared | Record sessions server-side — Phase 3 |
-| Enum option lists | Hardcoded in 2 JSX files | Silently diverge from the Mongoose schema | Single shared constants module — Phase 2 |
-| Form validation | Per component | Three copies of similar rules drift apart | Shared validators — Phase 2 |
-| Dashboard task list | Component state seeded from `seedTasks.js` | Nothing persists; a refresh loses every change | Wire to the task API |
+Every item in the old version of this table has been resolved. The original pattern — the
+client owning state the server should own — is recorded here because it is the defect class
+to watch for, not because it still exists.
 
-**The pattern:** the client owns state the server should own. Each one is defensible
-individually and collectively they mean a user's productivity data lives in one browser
-profile instead of their account.
+| Logic | Where it lives now | Note |
+|---|---|---|
+| Streak | Server — `/api/tasks/streak`, derived from `Task.completedAt` | The localStorage counter (`updateStreak.js`) and the timer route that carried it were deleted |
+| Reminder labels | Client — `utils/dates.js` `getReminder` | Same `formatDateKey` the planner and calendar bucket with, so no view can disagree about "today" |
+| Completion rate | Server — `/api/tasks/stats`, window-scoped | Lifetime dilution is gone; the analytics page picks the window explicitly |
+| Pomodoro state | Client — `localStorage` with an absolute end time | Survives reload; recording sessions server-side is Phase 3.1 |
+| Enum option lists | `constants/*.js`, one module per entity | Hand-maintained mirrors of `backend/src/constants/index.js` — still a copy, but one per domain rather than per JSX file |
+| Form validation | Server — `entityValidation.js`, whitelist-based | The client shapes the request; the server is the only validator |
+| Task list | Server — `/api/tasks/fetch` with filters, sort and pagination | The `seedTasks.js` fallback was deleted; a failed request shows the failure |
 
 ---
 
@@ -98,8 +98,8 @@ profile instead of their account.
 
 | Gap | Detail |
 |---|---|
-| Board and Calendar views | Active state exists, rendered content does not |
-| "Start Focus Now" in the create panel | Button renders but has no handler |
-| Sidebar quick-jump | Passes a value to an event-shaped handler, so the input never filters |
-| Task persistence | Create, complete, and delete mutate local state only |
-| `CreateTaskModal` accessibility | No `role="dialog"`, focus trap, Escape handling, or scroll lock |
+| No frontend tests | Correctness is guarded by lint and a build check only; `utils/dates.js` is the first thing worth covering |
+| Board (kanban) view | Removed rather than left as a dead switch; may return as a real page |
+| Time tracking against a task | `actualMinutes` exists on the model and renders on the detail page, but nothing writes it — Phase 3.1 |
+| Completion series | `stats.service.js` computes per-day counts but no route exposes them, so the analytics page shows aggregates only |
+| Project/goal picker on the task form | The form sets `context`; `projectId` and `goalId` are linked from the project and goal detail pages |

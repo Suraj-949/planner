@@ -4,8 +4,10 @@ import Checkbox from '../ui/Checkbox'
 import Input from '../ui/Input'
 import Label from '../ui/Label'
 import {
-    PROJECTS,
+    CATEGORY_LABELS,
+    CUSTOM_CATEGORY,
     RECURRING_OPTIONS,
+    TASK_CATEGORIES,
     TASK_PRIORITIES,
     WEEKDAY_LABELS,
     fromRecurrence,
@@ -55,6 +57,11 @@ const TaskFormPanel = ({ mode = 'create', initialTask, onClose, onSubmit }) => {
 
     const [form, setForm] = useState(() => {
         const recurrence = fromRecurrence(initialTask?.recurrence)
+        const existing = initialTask?.category ?? ''
+        // A stored category outside the presets (one the user typed into the Custom input)
+        // opens the select on Custom and prefills the text box, rather than silently
+        // snapping the task to a preset the moment the form is saved.
+        const isPreset = TASK_CATEGORIES.includes(existing)
 
         return {
             // Empty rather than the previous prefilled demo copy. That draft shipped a real
@@ -63,7 +70,8 @@ const TaskFormPanel = ({ mode = 'create', initialTask, onClose, onSubmit }) => {
             title: initialTask?.title ?? '',
             description: initialTask?.description ?? '',
             notes: initialTask?.notes ?? '',
-            project: initialTask?.context ?? PROJECTS[0],
+            category: isPreset ? existing : TASK_CATEGORIES[0],
+            customCategory: isPreset ? '' : existing,
             deadline: toDateInputValue(initialTask?.deadline) || todayInputValue(),
             priority: initialTask?.priority ?? 'medium',
             estimate: initialTask?.estimateMinutes ? formatEstimate(initialTask.estimateMinutes) : '',
@@ -126,11 +134,18 @@ const TaskFormPanel = ({ mode = 'create', initialTask, onClose, onSubmit }) => {
 
         if (!deadline) return
 
+        // The Custom sentinel never reaches the API: the typed value becomes the category.
+        // A blank custom input falls back to the first preset rather than failing the save
+        // with no visible cause — the alternative is a silent 400 from an empty string.
+        const custom = form.customCategory.trim()
+        const category =
+            form.category === CUSTOM_CATEGORY ? custom || TASK_CATEGORIES[0] : form.category
+
         onSubmit({
             title,
             description: form.description.trim(),
             notes: form.notes.trim(),
-            context: form.project,
+            category,
             priority: form.priority,
             deadline,
             estimate: form.estimate,
@@ -184,21 +199,36 @@ const TaskFormPanel = ({ mode = 'create', initialTask, onClose, onSubmit }) => {
                     />
                 </Field>
 
-                {/* Project + deadline */}
+                {/* Category + deadline */}
                 <div className="grid grid-cols-2 gap-2">
-                    <Field label="Project" htmlFor="ct-project">
+                    <Field label="Category" htmlFor="ct-category">
                         <select
-                            id="ct-project"
-                            value={form.project}
-                            onChange={update('project')}
+                            id="ct-category"
+                            value={form.category}
+                            onChange={update('category')}
                             className={selectClass}
                         >
-                            {PROJECTS.map((project) => (
-                                <option key={project} value={project}>
-                                    {project}
+                            {TASK_CATEGORIES.map((option) => (
+                                <option key={option} value={option}>
+                                    {CATEGORY_LABELS[option] ?? option}
                                 </option>
                             ))}
+                            <option value={CUSTOM_CATEGORY}>Custom</option>
                         </select>
+
+                        {/* The free-text half of the Custom option. Shown only then: a
+                            always-visible input next to a preset select would read as two
+                            competing answers to one question. */}
+                        {form.category === CUSTOM_CATEGORY && (
+                            <Input
+                                id="ct-custom-category"
+                                size="sm"
+                                value={form.customCategory}
+                                onChange={update('customCategory')}
+                                placeholder="Your category"
+                                className="mt-1.5"
+                            />
+                        )}
                     </Field>
 
                     <Field label="Deadline" htmlFor="ct-deadline">

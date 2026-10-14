@@ -7,14 +7,12 @@ export const TASK_STATUSES = ['pending', 'in-progress', 'completed']
 
 export const TASK_PRIORITIES = ['high', 'medium', 'low']
 
-export const TASK_CATEGORIES = [
-    'DSA',
-    'development',
-    'college',
-    'personal',
-    'work',
-    'other',
-]
+/*
+ * The preset categories the form and filter bar offer. `category` itself is free text on
+ * the server (bounded, not enum-locked) so the form's Custom option can store a label of
+ * the user's own — this list only drives the dropdown.
+ */
+export const TASK_CATEGORIES = ['personal', 'learning', 'office-work', 'side hustle']
 
 export const STATUS_LABELS = {
     pending: 'Pending',
@@ -29,13 +27,15 @@ export const PRIORITY_LABELS = {
 }
 
 export const CATEGORY_LABELS = {
-    DSA: 'DSA',
-    development: 'Development',
-    college: 'College',
     personal: 'Personal',
-    work: 'Work',
-    other: 'Other',
+    learning: 'Learning',
+    'office-work': 'Office Work',
+    'side hustle': 'Side Hustle',
 }
+
+// Sentinel shown as the last option in the category select. Never sent to the API —
+// choosing it reveals a text input whose trimmed value becomes the category instead.
+export const CUSTOM_CATEGORY = '__custom__'
 
 // Status → dot colour. Completed is green, in-progress is the accent, pending is neutral.
 export const STATUS_DOT = {
@@ -50,14 +50,16 @@ export const PRIORITY_BADGE = {
     low: 'bg-low-soft text-low-text',
 }
 
-// Task filter tabs. `key` is matched against a task by TaskRow.
+// Task filter tabs. Counts are supplied live by the page — the design reference shipped
+// placeholders (14/7/5/24) that had no relation to the rows actually rendered.
 export const TASK_FILTERS = [
-    { id: 'all', label: 'All', count: 14 },
-    { id: 'today', label: 'Today', count: 7 },
-    { id: 'upcoming', label: 'Upcoming', count: 5 },
-    { id: 'completed', label: 'Completed', count: 24 },
+    { id: 'all', label: 'All' },
+    { id: 'today', label: 'Today' },
+    { id: 'upcoming', label: 'Upcoming' },
+    { id: 'completed', label: 'Completed' },
 ]
 
+// Layout options for the task list. Board and calendar are placeholders for now.
 export const VIEW_MODES = [
     { id: 'list', label: 'List' },
     { id: 'board', label: 'Board' },
@@ -83,8 +85,6 @@ export const STATUS_VARIANTS = {
     'in-progress': 'primary',
     completed: 'secondary',
 }
-
-export const PROJECTS = ['Planner Core', 'Obsidian UI', 'Strategy 2025', 'Infrastructure']
 
 /*
  * Recurrence presets that map 1:1 onto the backend's `{ freq, interval, daysOfWeek }`

@@ -97,6 +97,23 @@ export const formatDateKey = (value) => {
     return `${year}-${month}-${day}`
 }
 
+/*
+ * Local day key for `amount` days after (or before) a day key.
+ *
+ * Rebuilt from calendar parts rather than by adding `amount × 24h` to an instant, so a DST
+ * transition inside the range cannot land the result in the neighbouring day — the same
+ * reason `daysBetween` rounds rather than divides.
+ */
+export const addLocalDaysKey = (key, amount) => {
+    const date = parseDateValue(key)
+
+    if (!date) return ''
+
+    return formatDateKey(
+        new Date(date.getFullYear(), date.getMonth(), date.getDate() + Number(amount || 0))
+    )
+}
+
 // 'overdue' | 'today' | 'tomorrow' | null
 export const getReminder = (task) => {
     if (!task?.deadline || task.status === 'completed') return null

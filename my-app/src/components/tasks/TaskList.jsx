@@ -1,6 +1,6 @@
 import TaskRow, { GRID, COLUMNS } from './TaskRow'
-import Badge from '../ui/Badge'
-import { Check, Gauge, Keyboard, Pencil, Trash2 } from 'lucide-react'
+import { CATEGORY_LABELS } from '../../constants/taskMeta'
+import { Check, Gauge, Pencil, Trash2 } from 'lucide-react'
 
 // Composed from TaskRow's GRID rather than restated. It previously duplicated the
 // `grid-cols-[...]` template, so adding a column to the row left the header one column
@@ -35,7 +35,7 @@ const CompletedRow = ({ task, onToggle, onEdit, onDelete, canMutate = true }) =>
             </span>
 
             <span className="ml-auto shrink-0 text-[11px] text-content-subtle tabular-nums">
-                {task.context}
+                {CATEGORY_LABELS[task.category] ?? task.category}
             </span>
         </button>
 
@@ -97,14 +97,11 @@ const TaskList = ({
                 ))
             )}
 
-            {/* Completed today */}
+            {/* Completed */}
             {completedTasks.length > 0 && (
                 <div className="border-t border-border bg-sidebar/40">
                     <div className="flex items-center gap-2 px-3 py-2">
-                        <h3 className="label-xs">Completed Today ({completedTasks.length})</h3>
-                        <Badge variant="secondary" className="px-1.5 py-0 text-[9px]">
-                            100% velocity on target
-                        </Badge>
+                        <h3 className="label-xs">Completed ({completedTasks.length})</h3>
                     </div>
 
                     {completedTasks.map((task) => (
@@ -124,18 +121,10 @@ const TaskList = ({
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-border bg-surface-raised px-3 py-2 text-[11px] text-content-subtle">
                 <span className="inline-flex items-center gap-1.5 tabular-nums">
                     <Gauge className="h-3 w-3" strokeWidth={1.8} />
-                    Logged: {footer.logged}
+                    Estimated: {footer.logged}
                 </span>
                 <span className="tabular-nums">
                     Completed: {footer.completed}/{footer.total} tasks
-                </span>
-
-                <span className="ml-auto hidden items-center gap-3 sm:flex">
-                    <span className="inline-flex items-center gap-1">
-                        <Keyboard className="h-3 w-3" strokeWidth={1.8} />
-                        J/K Navigate
-                    </span>
-                    <span>Space Toggle</span>
                 </span>
             </div>
         </div>
