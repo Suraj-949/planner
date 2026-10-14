@@ -1,17 +1,20 @@
 import { useMemo, useState } from 'react'
 import { useLocation } from 'react-router-dom'
-import Header from './Header'
+import TopBar from './TopBar'
 import Sidebar from './Sidebar'
 import { titleForPath } from '../../constants/navigation'
 import { useStats, useStreak } from '../../hooks/useTasks'
 
 /*
- * The authenticated frame: sidebar, header, and the mobile drawer.
+ * The authenticated frame: thin top bar, sidebar, scrollable workspace, status strip.
  *
  * Previously every page re-implemented this block, so adding a ninth page meant a ninth
  * copy of the drawer's open state, the desktop/mobile split and the active-item bookkeeping
  * — and each copy drifted slightly from the others. One shell means a page renders only its
  * own content.
+ *
+ * The workspace column owns the only scroll region (`overflow-y-auto`) so the top bar and
+ * status strip stay pinned while content moves — the reference layout's behaviour.
  *
  * The sidebar's live counts come from the same endpoints the dashboard reads, so the badge
  * and the page it points at can never disagree about how many tasks are open.
@@ -43,7 +46,8 @@ const AppShell = ({ children, onCreate, createLabel = 'New Task', search }) => {
 
     return (
         <div className="flex h-screen overflow-hidden bg-background text-content">
-            <div className="hidden lg:block">
+            {/* Sidebar runs the full height of the viewport, flush with the top. */}
+            <div className="hidden h-full lg:block">
                 <Sidebar badges={badges} onSearch={search} />
             </div>
 
@@ -65,16 +69,19 @@ const AppShell = ({ children, onCreate, createLabel = 'New Task', search }) => {
                 </div>
             )}
 
+            {/* Right column: top bar, scrollable main, status strip. */}
             <div className="flex min-w-0 flex-1 flex-col">
-                <Header
+                <TopBar
                     title={heading.title}
                     subtitle={heading.subtitle}
+                    onOpenNav={() => setNavOpen(true)}
                     onOpenCreate={onCreate}
                     onCreateLabel={createLabel}
-                    onOpenNav={() => setNavOpen(true)}
                 />
 
-                <main className="min-h-0 flex-1 overflow-y-auto px-3 py-3">{children}</main>
+                <main className="min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-4 sm:py-4">
+                    {children}
+                </main>
             </div>
         </div>
     )

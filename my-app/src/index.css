@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /*
- * Planner design tokens — dark only.
+ * Forge design tokens — dark only.
  *
  * Source of truth for the whole app. Components use semantic names
  * (bg-surface, text-content-muted, border-border) and never a raw hex value,

@@ -9,7 +9,7 @@ import { formatToday } from '../../utils/dates'
  * "today" long after it stopped being true, which made every relative label on screen —
  * Overdue, Due Today, Tomorrow — look wrong next to a header claiming a different day.
  */
-const Header = ({ title, subtitle, onOpenCreate, onOpenNav, onCreateLabel = 'New Task' }) => {
+const TopBar = ({ title, subtitle, onOpenCreate, onOpenNav, onCreateLabel = 'New Task' }) => {
     return (
         <header className="flex h-12 shrink-0 items-center gap-3 border-b border-border bg-surface px-3">
             <button
@@ -23,7 +23,7 @@ const Header = ({ title, subtitle, onOpenCreate, onOpenNav, onCreateLabel = 'New
 
             {/* Breadcrumb */}
             <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1.5 text-xs">
-                <span className="hidden text-content-subtle sm:inline">Planner</span>
+                <span className="hidden text-content-subtle sm:inline">Forge</span>
                 <span aria-hidden="true" className="hidden text-content-subtle sm:inline">
                     /
                 </span>
@@ -65,4 +65,4 @@ const Header = ({ title, subtitle, onOpenCreate, onOpenNav, onCreateLabel = 'New
     )
 }
 
-export default Header
+export default TopBar

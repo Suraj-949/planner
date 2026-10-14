@@ -130,6 +130,9 @@ export const toViewTask = (task) => ({
     recurrence: task.recurrence ?? null,
     projectId: task.projectId ?? null,
     goalId: task.goalId ?? null,
+
+    // Kept for the weekly chart, which buckets completions by the day they happened.
+    completedAt: task.completedAt ?? null,
 });
 
 export const toViewTasks = (tasks) => (Array.isArray(tasks) ? tasks : []).map(toViewTask);

@@ -338,7 +338,7 @@ const TasksPage = () => {
                 Bleeds AppShell's main padding so the create panel can sit flush against
                 the right edge, the same way it did when the page owned its own layout.
             */}
-            <div className="-mx-3 -my-3 flex min-h-[calc(100vh-3rem)] flex-wrap">
+            <div className="-mx-3 -my-3 flex min-h-[calc(100vh-4.75rem)] flex-wrap sm:-mx-4 sm:-my-4">
                 <main className="min-w-0 flex-1 px-3 py-3">
                     {/* Page heading */}
                     <div className="mb-3">

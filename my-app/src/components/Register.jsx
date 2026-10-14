@@ -71,10 +71,10 @@ const Register = () => {
                 {/* header section */}
                 <section className="flex w-full items-center justify-center gap-4 px-6">
                     <div className="flex items-center gap-3">
-                        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary text-3xl font-black text-primary-contrast">P</div>
+                        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary text-3xl font-black text-primary-contrast">F</div>
                         <div>
                             <p className="mt-2 text-2xl font-semibold tracking-wide text-content">
-                                Planner
+                                Forge
                             </p>
                             <p className="text-sm text-content-muted">
                                 A calm space for your daily flow
@@ -105,7 +105,7 @@ const Register = () => {
                                     </button>
                                 </div>
                                 <h2 className="mt-6 text-3xl font-semibold text-content">
-                                    {isLoginMode ? 'Welcome back to Planner' : 'Start with a fresh workspace'}
+                                    {isLoginMode ? 'Welcome back to Forge' : 'Start with a fresh workspace'}
                                 </h2>
                                 <p className="mt-3 text-sm leading-6 text-content-muted">
                                     {isLoginMode

@@ -95,9 +95,9 @@ const Sidebar = ({ badges = {}, onSearch, onClose }) => {
                     aria-hidden="true"
                     className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-[11px] font-black text-primary-contrast"
                 >
-                    P
+                    F
                 </span>
-                <span className="text-[15px] font-semibold tracking-tight text-content">Planner</span>
+                <span className="text-[15px] font-semibold tracking-tight text-content">Forge</span>
                 <Badge variant="primary" className="px-1.5 py-0 text-[9px]">
                     v2.4 PRO
                 </Badge>
